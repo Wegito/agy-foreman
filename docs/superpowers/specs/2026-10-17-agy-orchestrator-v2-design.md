@@ -366,6 +366,7 @@ The orchestrator names the skills Gemini should use (`skills: ["test-driven-deve
 | Headless runs **inherit the user's global agy plugins, skills, MCP servers and permission mode** (`always-proceed` overrode `--mode plan`, it loaded superpowers, and it called the socraticode MCP) | Live run | Report `permission_mode` from `init`; the worktree plus server checks stay the safety layer; Plan 2 decides how to isolate runs |
 | **Hard word or length limits make Flash loop**: it wrote ~15 scripts to count words in its own draft and ran out the clock | Live run | Don't set hard length limits in briefs; ask for a structure, and let the server truncate |
 | agy's `--log-file` contains the account email | Live run | Private temp dir, deleted after the run, never returned |
+| **Worktrees contain only committed files**: uncommitted or git-ignored files (e.g. docs excluded by an inherited `.gitignore`) are missing for Gemini, and so are dependencies until `setup_command` runs | Found while dogfooding (2026-10-17) | Commit everything the brief references; `setup_command` runs in every fresh worktree; `dry_run` shows the brief |
 
 ### 9.6 `review.md`, `async.md`, `lessons.md`
 - **review.md:** read the envelope, not the report. Check `contract`, `verify`, `audit_flags` and `guard_events` first, then `diff_stat`. Pull `full` or specific `paths` only where needed (targeted reads allowed). Use `followup` for small fixes and `discard` plus a re-brief when a premise was wrong.
