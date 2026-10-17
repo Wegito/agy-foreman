@@ -1,7 +1,7 @@
 {
   "name": "agy-foreman",
   "version": "0.1.0",
-  "description": "Hand plan steps from Claude Code to Gemini 3.8 Flash through the Antigravity CLI, and merge only what passes your tests.",
+  "description": "Hand plan tasks from Claude Code to Gemini 3.8 Flash through the Antigravity CLI, and merge only what passes your tests.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mountaser/agy-foreman.git"
