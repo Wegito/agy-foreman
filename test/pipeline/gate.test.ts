@@ -95,6 +95,14 @@ describe("run_command", () => {
       expect(d(p(), "run_command", { CommandLine: c })).toBe("deny");
     }
   });
+  it("does not mistake format:check or string escapes for danger or paths", () => {
+    const pol = p({ allowedCommands: ["npm run", "node"] });
+    expect(d(pol, "run_command", { CommandLine: "npm run format:check" })).toBe("auto_approve");
+    expect(d(pol, "run_command", { CommandLine: "node -e 'console.log(\"t\")'" })).toBe(
+      "auto_approve",
+    );
+    expect(d(pol, "run_command", { CommandLine: "format C:" })).toBe("deny");
+  });
   it("requires a word boundary for allowlist prefixes", () => {
     expect(d(p(), "run_command", { CommandLine: "npm testx" })).toBe("deny");
   });

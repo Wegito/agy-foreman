@@ -19,6 +19,7 @@ const projectSchema = z
   .object({
     test_command: command.optional(),
     setup_command: command.optional(),
+    test_report: z.string().min(1).optional(),
     protected_paths: z
       .array(z.string().min(1))
       .default([
@@ -53,6 +54,7 @@ const projectSchema = z
 export interface ProjectConfig {
   testCommand?: string[];
   setupCommand?: string[];
+  testReport?: string;
   protectedPaths: string[];
   model: string;
   effort: Effort;
@@ -95,6 +97,7 @@ export function parseProjectConfig(raw: unknown): ProjectConfig {
   return {
     ...(p.test_command ? { testCommand: p.test_command } : {}),
     ...(p.setup_command ? { setupCommand: p.setup_command } : {}),
+    ...(p.test_report ? { testReport: p.test_report } : {}),
     protectedPaths: p.protected_paths,
     model: p.model,
     effort: p.effort,

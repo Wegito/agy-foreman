@@ -66,6 +66,13 @@ describe("parseProjectConfig", () => {
   it("rejects unknown keys so typos surface", () => {
     expect(() => parseProjectConfig({ tset_command: ["x"] })).toThrow(/tset_command/);
   });
+
+  it("accepts an optional test_report path", () => {
+    expect(parseProjectConfig({ test_report: "reports/junit.xml" }).testReport).toBe(
+      "reports/junit.xml",
+    );
+    expect(parseProjectConfig({}).testReport).toBeUndefined();
+  });
 });
 
 describe("loadRuntimeConfig", () => {

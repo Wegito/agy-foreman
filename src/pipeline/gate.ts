@@ -87,7 +87,9 @@ function pathOutsideWorktree(worktree: string, cmdLine: string): string | null {
   for (const tok of tokens) {
     if (!tok) continue;
     if (/^(~|\$env:|\$HOME\b|%[A-Za-z_]+%)/i.test(tok)) return tok;
-    if (/^([A-Za-z]:[\\/]|[\\/]|\.\.([\\/]|$))/.test(tok)) {
+    // Drive paths, POSIX roots, UNC paths and `..` escapes. A lone leading backslash is left
+    // alone: it is far more often a string escape (node -e '…\"x\"…') than a root-relative path.
+    if (/^([A-Za-z]:[\\/]|\/|\\\\|\.\.([\\/]|$))/.test(tok)) {
       if (!isInside(worktree, resolveTarget(worktree, tok))) return tok;
     }
   }
@@ -164,7 +166,7 @@ export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
   if (name === "run_command") {
     const cmdLine = String(args.CommandLine ?? "").trim();
     const danger =
-      /\bgit\s+(push|commit|reset|checkout|switch|rebase|merge|remote|config|clean|stash|worktree|branch|tag)\b|\b(curl|wget|irm|iwr|Invoke-WebRequest|Invoke-RestMethod|iex|Invoke-Expression)\b|\brm\s+-rf\b|\bRemove-Item\b.*?\b-Recurse\b|\brmdir\s+\/s\b|\bdel\s+\/s\b|\bshutdown\b|\bformat\b/i;
+      /\bgit\s+(push|commit|reset|checkout|switch|rebase|merge|remote|config|clean|stash|worktree|branch|tag)\b|\b(curl|wget|irm|iwr|Invoke-WebRequest|Invoke-RestMethod|iex|Invoke-Expression)\b|\brm\s+-rf\b|\bRemove-Item\b.*?\b-Recurse\b|\brmdir\s+\/s\b|\bdel\s+\/s\b|\bshutdown\b|(^|[;&|]\s*)format\s+[A-Za-z]:/i;
 
     if (danger.test(cmdLine)) {
       return { decision: "deny", reason: "Dangerous command not allowed." };
