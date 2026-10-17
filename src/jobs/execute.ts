@@ -1,0 +1,246 @@
+// Job execution and progress tracking for JobManager (phase/event listeners, completion, quota handling).
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import type { StreamEvent } from "../agy/types.js";
+import { progressFraction } from "../pipeline/brief.js";
+import type { Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
+import { repoHash } from "../pipeline/worktree.js";
+import { classifyIncident } from "./incidents.js";
+import { computeProgress } from "./progress.js";
+import type { JobRecord } from "./store.js";
+import { firstOpenItem, isSamePath } from "./helpers.js";
+import type { JobManagerDeps } from "./manager.js";
+
+export interface ExecuteJobContext {
+  deps: JobManagerDeps;
+  abortControllers: Map<string, AbortController>;
+  activeJobs: Set<string>;
+  queuedSpecs: Map<string, JobSpec>;
+  writeQueues: Map<string, Promise<void>>;
+  writeRecord: (record: JobRecord) => Promise<void>;
+  startFollowup: (
+    parent: JobRecord,
+    feedback: string,
+    bypassApproval: boolean,
+  ) => Promise<{ state: "running" | "queued"; jobId: string }>;
+  drainQueue: () => Promise<void>;
+  checkIdle: () => void;
+}
+
+export function executeJob(ctx: ExecuteJobContext, record: JobRecord, spec: JobSpec): void {
+  const abortController = new AbortController();
+  ctx.abortControllers.set(record.id, abortController);
+
+  const jobStartTime = ctx.deps.now();
+  let runStartTime: Date | undefined;
+  let lastWriteTime = 0;
+  const worktreePath = path.join(
+    ctx.deps.pipelineDeps.worktreeRoot,
+    repoHash(spec.repoRoot),
+    spec.jobId,
+  );
+
+  const updateProgressAndSave = async (force: boolean) => {
+    const nowMs = ctx.deps.now().getTime();
+    if (!force && nowMs - lastWriteTime < 500) {
+      return;
+    }
+    lastWriteTime = nowMs;
+    const median = await ctx.deps.ledger.medianRunSec(record.kind);
+    const elapsedSec = (nowMs - jobStartTime.getTime()) / 1000;
+    const runElapsedSec = runStartTime ? (nowMs - runStartTime.getTime()) / 1000 : 0;
+    const prog = computeProgress({
+      phase: record.progress.phase,
+      checklist:
+        record.progress.checklistTotal > 0
+          ? {
+              done: record.progress.checklistDone,
+              total: record.progress.checklistTotal,
+            }
+          : undefined,
+      elapsedSec,
+      runElapsedSec,
+      medianRunSec: median,
+    });
+    record.progress.percent = prog.percent;
+    record.progress.elapsedSec = elapsedSec;
+    record.progress.etaSec = prog.etaSec;
+    record.updatedAt = ctx.deps.now().toISOString();
+    await ctx.writeRecord(record);
+  };
+
+  const onPhase = (phase: "prepare" | "contract" | "brief" | "run" | "verify" | "report") => {
+    record.progress.phase = phase;
+    if (phase === "run" && !runStartTime) {
+      runStartTime = ctx.deps.now();
+    }
+    updateProgressAndSave(true).catch(() => {});
+  };
+
+  const onEvent = (ev: StreamEvent) => {
+    let changed = false;
+    if (ev.kind === "step") {
+      if (ev.state === "DONE" || ev.state === "done") {
+        record.progress.toolSteps++;
+        changed = true;
+      }
+      const params = ev.toolParams;
+      if (params && typeof params === "object") {
+        const target =
+          params.TargetFile ?? params.targetFile ?? params.AbsolutePath ?? params.absolutePath;
+        if (typeof target === "string") {
+          let rel = target;
+          if (path.isAbsolute(rel)) {
+            const r = path.relative(worktreePath, rel);
+            if (!r.startsWith("..") && !path.isAbsolute(r)) {
+              rel = r;
+            }
+          }
+          record.progress.currentFile = rel.replace(/\\/g, "/");
+          changed = true;
+        }
+      }
+      if (ev.usage?.totalTokens) {
+        record.progress.tokens = ev.usage.totalTokens;
+        changed = true;
+      }
+      // Gemini ticks the checklist with write_to_file or (more often) replace_file_content.
+      if (ev.toolName && /write_to_file|replace_file_content/.test(ev.toolName)) {
+        const progressFile = path.join(worktreePath, ".agy-task", "progress.md");
+        const target = params?.TargetFile ?? params?.targetFile;
+        if (
+          typeof target === "string" &&
+          (target.endsWith("progress.md") || isSamePath(target, progressFile))
+        ) {
+          try {
+            const content = readFileSync(progressFile, "utf8");
+            const frac = progressFraction(content);
+            record.progress.checklistDone = frac.done;
+            record.progress.checklistTotal = frac.total;
+            record.progress.currentStep = firstOpenItem(content);
+            changed = true;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } else if (ev.kind === "result") {
+      if (ev.result?.usage?.totalTokens) {
+        record.progress.tokens = ev.result.usage.totalTokens;
+        changed = true;
+      }
+    }
+    if (changed) {
+      updateProgressAndSave(false).catch(() => {});
+    }
+  };
+
+  void (async () => {
+    let envelope: Envelope | undefined;
+    let runError: unknown;
+    try {
+      const pd: PipelineDeps = {
+        ...ctx.deps.pipelineDeps,
+        onPhase,
+        onEvent,
+        signal: abortController.signal,
+      };
+      envelope = await ctx.deps.runJob(spec, pd);
+    } catch (err) {
+      runError = err;
+    }
+
+    if (runError !== undefined) {
+      const reason = runError instanceof Error ? runError.message : String(runError);
+      record.state = "error";
+      record.progress.phase = "done";
+      record.progress.percent = 100;
+      record.progress.elapsedSec = (ctx.deps.now().getTime() - jobStartTime.getTime()) / 1000;
+      delete record.progress.etaSec;
+      record.updatedAt = ctx.deps.now().toISOString();
+      await ctx.writeRecord(record);
+      await ctx.deps.ledger.append({
+        jobId: record.id,
+        kind: record.kind,
+        state: "error",
+        durationSec: record.progress.elapsedSec,
+        estimate: record.estimate,
+        returnedTokens: 0,
+        at: ctx.deps.now().toISOString(),
+      });
+    } else if (envelope) {
+      const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
+      if (incident) {
+        record.incident = incident;
+      } else {
+        delete record.incident;
+      }
+      record.envelope = envelope;
+      record.state = envelope.state;
+      record.progress.phase = "done";
+      record.progress.percent = 100;
+      record.progress.elapsedSec = envelope.durationSec;
+      delete record.progress.etaSec;
+      record.updatedAt = ctx.deps.now().toISOString();
+      await ctx.writeRecord(record);
+
+      const returnedTokens =
+        envelope.usage?.outputTokens ?? Math.round((envelope.untrustedReport?.length ?? 0) / 4);
+      await ctx.deps.ledger.append({
+        jobId: record.id,
+        kind: record.kind,
+        state: envelope.state,
+        durationSec: envelope.durationSec,
+        runSec: envelope.durationSec,
+        estimate: record.estimate,
+        returnedTokens,
+        usageTotal: envelope.usage?.totalTokens,
+        at: ctx.deps.now().toISOString(),
+        ...(incident ? { incident } : {}),
+      });
+
+      if (envelope.state === "quota") {
+        const resetInSec = envelope.quota?.resetInSec ?? 900;
+        const cooldownSec = Math.max(60, resetInSec);
+        const cooldownUntil = new Date(ctx.deps.now().getTime() + cooldownSec * 1000).toISOString();
+        const cooldownText = envelope.quota?.resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
+        await ctx.deps.flags.update((f) => {
+          f.cooldownUntil = cooldownUntil;
+          f.cooldownText = cooldownText;
+        });
+
+        try {
+          const choice = await ctx.deps.approver.quota({
+            resetText: cooldownText,
+            resetAt: cooldownUntil,
+            pausedJobId: record.id,
+          });
+          if (choice === "retry") {
+            await ctx.deps.flags.update((f) => {
+              delete f.cooldownUntil;
+              delete f.cooldownText;
+            });
+            await ctx.startFollowup(
+              record,
+              "Continue the task; the previous run stopped at a usage limit.",
+              true,
+            );
+          } else if (choice === "continue_without") {
+            await ctx.deps.flags.update((f) => {
+              f.delegationPaused = true;
+            });
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    ctx.abortControllers.delete(record.id);
+    ctx.activeJobs.delete(record.id);
+    ctx.queuedSpecs.delete(record.id);
+    ctx.writeQueues.delete(record.id);
+    await ctx.drainQueue();
+    ctx.checkIdle();
+  })();
+}
