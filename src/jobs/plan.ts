@@ -1,3 +1,6 @@
+// Plan files: Superpowers plans (`### Task 3: Title`) and OpenSpec changes (`tasks.md` with
+// `## 3. Title` sections of `- [ ] 3.1 ...` items, plus proposal.md, design.md and specs/ beside it).
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface PlanStep {
@@ -6,16 +9,74 @@ export interface PlanStep {
   text: string;
   files: string[];
   testBlocks: { path: string; content: string }[];
+  /** Open checkbox items in the step (OpenSpec `- [ ] 3.1 ...`), used as the progress checklist. */
+  items: string[];
 }
 
-export function planTitle(markdown: string): string {
+/** The `# Title`, or the change name for an OpenSpec tasks.md (which has no title). */
+export function planTitle(markdown: string, file?: string): string {
   const match = markdown.match(/^#\s+(.*)$/m);
-  return match ? match[1].trim() : "";
+  if (match) return match[1].trim();
+  return file ? (openSpecChange(file) ?? "") : "";
+}
+
+/** The change name when `file` is `.../openspec/changes/<name>/tasks.md`. */
+export function openSpecChange(file: string): string | undefined {
+  const parts = path.resolve(file).split(path.sep);
+  const n = parts.length;
+  return n >= 4 &&
+    parts[n - 1] === "tasks.md" &&
+    parts[n - 3] === "changes" &&
+    parts[n - 4] === "openspec"
+    ? parts[n - 2]
+    : undefined;
+}
+
+const CONTEXT_MAX_CHARS = 24_000;
+
+/**
+ * For an OpenSpec tasks.md: the change's proposal, design and spec deltas, inlined because an
+ * uncommitted change folder does not exist in the job's worktree. Empty for other plans.
+ */
+export async function openSpecContext(planPath: string): Promise<string> {
+  const name = openSpecChange(planPath);
+  if (!name) return "";
+  const dir = path.dirname(planPath);
+  const files = ["proposal.md", "design.md"];
+  try {
+    const walk = async (rel: string): Promise<void> => {
+      for (const e of await readdir(path.join(dir, rel), { withFileTypes: true })) {
+        const r = path.posix.join(rel, e.name);
+        if (e.isDirectory()) await walk(r);
+        else if (e.name.endsWith(".md")) files.push(r);
+      }
+    };
+    await walk("specs");
+  } catch {
+    // no specs folder
+  }
+  let out = "";
+  for (const f of files) {
+    let body: string;
+    try {
+      body = await readFile(path.join(dir, f), "utf8");
+    } catch {
+      continue;
+    }
+    const block = `\n\n### openspec/changes/${name}/${f}\n\n${body.trim()}`;
+    if (out.length + block.length > CONTEXT_MAX_CHARS) {
+      out += `\n\n(${f} and later files omitted: context limit)`;
+      break;
+    }
+    out += block;
+  }
+  return out ? `\n\n## Context: OpenSpec change "${name}"${out}` : "";
 }
 
 export function parsePlanStep(markdown: string, step: number): PlanStep {
   const lines = markdown.split(/\r?\n/);
-  const stepRegex = new RegExp(`^(#{2,4})\\s+Task\\s+${step}[:.]\\s*(.*)$`);
+  // `### Task 3: Title` or `## 3. Title`; never `## 3.1 Title`.
+  const stepRegex = new RegExp(`^(#{2,4})\\s+(?:Task\\s+)?${step}[:.](?:\\s+(.*))?$`);
 
   let startLineIdx = -1;
   let headingLevel = 0;
@@ -25,7 +86,7 @@ export function parsePlanStep(markdown: string, step: number): PlanStep {
     const match = lines[i].match(stepRegex);
     if (match) {
       headingLevel = match[1].length;
-      title = match[2].trim();
+      title = (match[2] ?? "").trim();
       startLineIdx = i;
       break;
     }
@@ -108,11 +169,16 @@ export function parsePlanStep(markdown: string, step: number): PlanStep {
     }
   }
 
+  const items = sectionLines
+    .map((l) => /^\s*[-*]\s+\[ \]\s+(.+)$/.exec(l)?.[1].trim())
+    .filter((x): x is string => !!x);
+
   return {
     step,
     title,
     text,
     files,
     testBlocks,
+    items,
   };
 }

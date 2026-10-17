@@ -13,7 +13,7 @@ import { createWorktree, removeWorktree } from "../pipeline/worktree.js";
 import { ApprovalUnavailable, type TaskCard } from "./approver.js";
 import { hashPlan, validGrant } from "./flags.js";
 import { tagsFor } from "./lessons.js";
-import { parsePlanStep, planTitle } from "./plan.js";
+import { openSpecContext, parsePlanStep, planTitle } from "./plan.js";
 import { emptyProgress, newJobId, type JobRecord } from "./store.js";
 import { tokenGate } from "./tokengate.js";
 import type { JobManagerDeps, StartInput, StartResult } from "./manager.js";
@@ -106,20 +106,18 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
     try {
       const step = parsePlanStep(planContent, i.plan.step);
       planFiles = step.files;
-      task = step.text;
+      task = step.text + (await openSpecContext(planPath));
       title = step.title;
       contractTests = i.kind === "explore" ? undefined : (i.contractTests ?? step.testBlocks);
       // One checklist item per non-test file, so the run-phase % moves as Gemini ticks them off.
       const implFiles = step.files.filter(
         (f) => !/(\.test\.|\.spec\.|_test\.|(^|\/)test_)/.test(f),
       );
+      const work = implFiles.length > 0 ? implFiles.map((f) => `Implement ${f}`) : step.items;
       checklist =
-        i.kind === "explore" || implFiles.length === 0
+        i.kind === "explore" || work.length === 0
           ? undefined
-          : [
-              ...implFiles.map((f) => `Implement ${f}`),
-              "Run the verification commands and fix failures",
-            ];
+          : [...work, "Run the verification commands and fix failures"];
     } catch (err) {
       return {
         type: "result",
@@ -277,7 +275,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
       const currentFlags = await deps.flags.read();
       const grant = validGrant(currentFlags, planFile, hash, deps.now());
       if (!grant) {
-        const pTitle = planTitle(planContent!);
+        const pTitle = planTitle(planContent!, planFile);
         const steps = i.plan.delegateSteps ?? [i.plan.step];
         const approved = await deps.approver.plan({
           planFile,
