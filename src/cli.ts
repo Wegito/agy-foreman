@@ -247,7 +247,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
     await runtime.manager.recoverOrphans();
     server = createServer(runtime.manager, {
       defaultRepoRoot: () => io.cwd,
-      version: "0.0.1",
+      version: "0.1.0",
     });
     const quota = startQuotaRefresher({
       file: quotaFile(io.env),
