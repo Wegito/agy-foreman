@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -388,6 +388,41 @@ export async function main(argv: string[], io: Io): Promise<number> {
       io.out(`${mark} ${c.name}: ${c.detail}`);
     }
     return checks.some((c) => !c.ok) ? 1 : 0;
+  }
+
+  if (cmd === "install-skill") {
+    let srcDir = io.env.AGYO_SKILL_SRC;
+    if (!srcDir) {
+      const candidate = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../skills/gemini-delegation",
+      );
+      if (existsSync(candidate)) {
+        srcDir = candidate;
+      } else {
+        srcDir = path.join(io.cwd, "skills", "gemini-delegation");
+      }
+    }
+    if (!existsSync(srcDir)) {
+      io.err(`skill source not found: ${srcDir}`);
+      return 1;
+    }
+
+    const isProject = argv.includes("--project");
+    const home = io.env.USERPROFILE || io.env.HOME || "";
+    const target = isProject
+      ? path.join(io.cwd, ".claude", "skills", "gemini-delegation")
+      : path.join(home, ".claude", "skills", "gemini-delegation");
+
+    if (existsSync(target)) {
+      io.out(`already installed: ${target}`);
+      return 1;
+    }
+
+    mkdirSync(path.dirname(target), { recursive: true });
+    cpSync(srcDir, target, { recursive: true });
+    io.out(`installed: ${target}`);
+    return 0;
   }
 
   io.err(`unknown command: ${cmd}`);
