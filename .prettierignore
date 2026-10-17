@@ -4,3 +4,4 @@ package
 *.tgz
 package-lock.json
 docs
+.agents
