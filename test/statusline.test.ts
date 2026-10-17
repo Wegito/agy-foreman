@@ -94,10 +94,26 @@ describe("install / uninstall", () => {
       type: "command",
       command: 'node "C:/x/agy-orchestrator/dist/index.js" statusline',
       padding: 0,
+      refreshInterval: 2,
     });
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "already_installed" });
     expect(await uninstallStatusLine(f)).toBe("removed");
     expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine).toBeUndefined();
+  });
+
+  // Regression (found live): without a timer the line froze while the orchestrator was idle.
+  it("upgrades an older install that had no refresh interval", async () => {
+    const f = files();
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(path.dirname(f.settingsFile), { recursive: true });
+    writeFileSync(
+      f.settingsFile,
+      JSON.stringify({
+        statusLine: { type: "command", command: statusLineCommand(entry), padding: 0 },
+      }),
+    );
+    expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "installed" });
+    expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine.refreshInterval).toBe(2);
   });
 
   it("wraps an existing status line and restores it on uninstall", async () => {

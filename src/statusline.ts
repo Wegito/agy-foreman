@@ -111,7 +111,14 @@ export interface StatusLineSetting {
   type: "command";
   command: string;
   padding?: number;
+  refreshInterval?: number;
 }
+
+/**
+ * Seconds between re-runs. Claude Code's event-driven updates go quiet while the orchestrator is
+ * idle (exactly when a job runs), so a timer is needed for the bar and elapsed time to move.
+ */
+export const REFRESH_INTERVAL_SEC = 2;
 
 export function claudeSettingsPath(env: NodeJS.ProcessEnv): string {
   if (env.AGYO_CLAUDE_SETTINGS) return env.AGYO_CLAUDE_SETTINGS;
@@ -164,11 +171,22 @@ export async function installStatusLine(o: {
 }): Promise<InstallResult> {
   const settings = await readJson(o.settingsFile);
   const current = settings.statusLine as StatusLineSetting | undefined;
-  if (isOurs(current)) return { state: "already_installed", settings: o.settingsFile };
+  if (isOurs(current)) {
+    if (current?.refreshInterval === REFRESH_INTERVAL_SEC) {
+      return { state: "already_installed", settings: o.settingsFile };
+    }
+    // Upgrade an older install that lacked the refresh timer.
+    await writeJsonAtomic(o.settingsFile, {
+      ...settings,
+      statusLine: { ...current, refreshInterval: REFRESH_INTERVAL_SEC },
+    });
+    return { state: "installed", settings: o.settingsFile };
+  }
   const ours: StatusLineSetting = {
     type: "command",
     command: statusLineCommand(o.entry),
     padding: 0,
+    refreshInterval: REFRESH_INTERVAL_SEC,
   };
   if (current?.command) {
     await writeJsonAtomic(o.wrapFile, { previous: current });
