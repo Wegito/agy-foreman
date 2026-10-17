@@ -45,9 +45,14 @@ export function classify(i: ClassifyInput): Outcome {
   const r = i.result;
   if (r) {
     if (r.status === "ERROR" || r.status === "INVALID") {
-      return withCid({ type: "error" as const, message: r.error || `agy status ${r.status}`, exitCode: i.exitCode });
+      return withCid({
+        type: "error" as const,
+        message: r.error || `agy status ${r.status}`,
+        exitCode: i.exitCode,
+      });
     }
-    if (r.status === "CANCELED" || r.status === "INTERRUPTED") return withCid({ type: "cancelled" as const });
+    if (r.status === "CANCELED" || r.status === "INTERRUPTED")
+      return withCid({ type: "cancelled" as const });
     if (r.status === "SUCCESS" && r.response.trim()) {
       return withCid({
         type: "success" as const,
@@ -61,7 +66,11 @@ export function classify(i: ClassifyInput): Outcome {
       return withCid({ type: "denied" as const, detail: i.stderr.trim().slice(0, 2000) });
     }
     if (i.exitCode === 0 || i.exitCode === null) {
-      return withCid({ type: "error" as const, message: `agy returned an empty response (status ${r.status || "unknown"}).`, exitCode: i.exitCode });
+      return withCid({
+        type: "error" as const,
+        message: `agy returned an empty response (status ${r.status || "unknown"}).`,
+        exitCode: i.exitCode,
+      });
     }
   }
 

@@ -53,7 +53,9 @@ export function parseLine(line: string): StreamEvent | null {
       ...(conversationId ? { conversationId } : {}),
       ...(str(init.model) ? { model: str(init.model) } : {}),
       ...(str(init.cwd) ? { cwd: str(init.cwd) } : {}),
-      tools: Array.isArray(init.tools) ? init.tools.filter((t): t is string => typeof t === "string") : [],
+      tools: Array.isArray(init.tools)
+        ? init.tools.filter((t): t is string => typeof t === "string")
+        : [],
       ...(str(init.permission_mode) ? { permissionMode: str(init.permission_mode) } : {}),
     };
   }

@@ -104,4 +104,3 @@ describe("minimum cooldown", () => {
     expect(reg.cooling("gemini")).toBe(false);
   });
 });
-

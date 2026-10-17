@@ -17,7 +17,14 @@ describe("killTree (unit)", () => {
 
   it("ignores taskkill failure (process already gone)", async () => {
     await expect(
-      killTree(42, { deps: { platform: "win32", execFile: async () => { throw new Error("128"); } } }),
+      killTree(42, {
+        deps: {
+          platform: "win32",
+          execFile: async () => {
+            throw new Error("128");
+          },
+        },
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -31,13 +38,24 @@ describe("killTree (unit)", () => {
         sleep: async () => {},
       },
     });
-    expect(sent).toEqual([[-42, "SIGTERM"], [-42, "SIGKILL"]]);
+    expect(sent).toEqual([
+      [-42, "SIGTERM"],
+      [-42, "SIGKILL"],
+    ]);
   });
 
   it("swallows ESRCH on POSIX", async () => {
     const err = Object.assign(new Error("gone"), { code: "ESRCH" });
     await expect(
-      killTree(42, { deps: { platform: "linux", processKill: () => { throw err; }, sleep: async () => {} } }),
+      killTree(42, {
+        deps: {
+          platform: "linux",
+          processKill: () => {
+            throw err;
+          },
+          sleep: async () => {},
+        },
+      }),
     ).resolves.toBeUndefined();
   });
 });

@@ -18,7 +18,10 @@ const defaultDeps: KillDeps = {
 };
 
 /** Spawn options that make killTree able to reach the whole tree. */
-export function treeSpawnOptions(platform: NodeJS.Platform = process.platform): { detached: boolean; windowsHide: true } {
+export function treeSpawnOptions(platform: NodeJS.Platform = process.platform): {
+  detached: boolean;
+  windowsHide: true;
+} {
   // POSIX: detached puts the child in its own process group so kill(-pid) reaches grandchildren.
   // Windows: taskkill /T walks the tree; detached would open a new console, so keep it off.
   return { detached: platform !== "win32", windowsHide: true };
@@ -33,7 +36,10 @@ export function isAlive(pid: number): boolean {
   }
 }
 
-export async function killTree(pid: number, opts: { graceMs?: number; deps?: Partial<KillDeps> } = {}): Promise<void> {
+export async function killTree(
+  pid: number,
+  opts: { graceMs?: number; deps?: Partial<KillDeps> } = {},
+): Promise<void> {
   const d: KillDeps = { ...defaultDeps, ...opts.deps };
   if (d.platform === "win32") {
     try {
