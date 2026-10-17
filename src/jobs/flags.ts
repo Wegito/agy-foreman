@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { renameWithRetry } from "./fsutil.js";
 
 export interface PlanGrant {
   file: string;
@@ -68,7 +69,7 @@ export class FlagStore {
       const rand = randomBytes(4).toString("hex");
       const tmpPath = `${this.file}.${process.pid}.${rand}.tmp`;
       await writeFile(tmpPath, JSON.stringify(updated, null, 2), "utf8");
-      await rename(tmpPath, this.file);
+      await renameWithRetry(tmpPath, this.file);
       return updated;
     };
 

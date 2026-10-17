@@ -96,6 +96,44 @@ function pathOutsideWorktree(worktree: string, cmdLine: string): string | null {
   return null;
 }
 
+/**
+ * Splits a command line on &&, ||, ; and | outside of quotes, so a quoted regex like
+ * -Pattern "A|B" stays one segment (found live: the gate denied a harmless Select-String).
+ */
+export function splitCommandSegments(cmdLine: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quote: string | null = null;
+  for (let i = 0; i < cmdLine.length; i++) {
+    const c = cmdLine[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      cur += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    const two = cmdLine.slice(i, i + 2);
+    if (two === "&&" || two === "||") {
+      out.push(cur);
+      cur = "";
+      i++;
+      continue;
+    }
+    if (c === ";" || c === "|") {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
 export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
   const name = call.name;
   const args = call.args ?? {};
@@ -187,10 +225,7 @@ export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
       };
     }
 
-    const segments = cmdLine
-      .split(/&&|\|\||;|\|/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const segments = splitCommandSegments(cmdLine);
 
     const readOnlyGit = /^git\s+(status|diff|log|show|ls-files|rev-parse|grep|blame)\b/i;
     const listings =

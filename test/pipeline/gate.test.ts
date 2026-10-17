@@ -182,3 +182,21 @@ describe("other tools", () => {
     }
   });
 });
+
+// Regression (found live): splitting on | inside quotes denied a harmless Select-String.
+describe("quoted separators", () => {
+  it("does not split on | ; && inside quotes", async () => {
+    const { splitCommandSegments } = await import("../../src/pipeline/gate.js");
+    expect(splitCommandSegments('Select-String -Path src -Pattern "A|B" && git status')).toEqual([
+      'Select-String -Path src -Pattern "A|B"',
+      "git status",
+    ]);
+    expect(splitCommandSegments("echo 'a;b' ; ls")).toEqual(["echo 'a;b'", "ls"]);
+    expect(
+      d(p(), "run_command", {
+        CommandLine: 'Select-String -Path src -Pattern "ClientModeApprover|suggested"',
+      }),
+    ).toBe("auto_approve");
+    expect(d(p(), "run_command", { CommandLine: 'echo "x" | git push' })).toBe("deny");
+  });
+});

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { renameWithRetry } from "./fsutil.js";
 
 export type Audience = "implementer" | "orchestrator";
 
@@ -89,7 +90,7 @@ async function atomicWrite(finalPath: string, content: string): Promise<void> {
   await writeFile(tmpPath, content, "utf8");
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      await rename(tmpPath, finalPath);
+      await renameWithRetry(tmpPath, finalPath);
       return;
     } catch (err: unknown) {
       if (attempt < 4 && (err as { code?: string })?.code === "EPERM") {

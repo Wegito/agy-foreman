@@ -292,3 +292,50 @@ describe("progress checklist from plan steps", () => {
     ]);
   });
 });
+
+describe("compactRecord", () => {
+  it("drops the test output of passed jobs and caps reports", async () => {
+    const { compactRecord } = await import("../../src/jobs/manager.js");
+    const verify = {
+      exitCode: 0,
+      timedOut: false,
+      passed: true,
+      newSkips: 0,
+      fewerTests: false,
+      protectedRestored: [],
+      tamper: [],
+      auditFlags: [],
+      failures: [],
+      outputTail: "x".repeat(9000),
+    };
+    const base = {
+      id: "t-1",
+      kind: "implement",
+      repoRoot: "/r",
+      title: "t",
+      state: "passed",
+      progress: {},
+      createdAt: "",
+      updatedAt: "",
+      returnedChars: 0,
+    } as never as import("../../src/jobs/store.js").JobRecord;
+    const env = {
+      state: "passed",
+      verify,
+      untrustedReport: "<<<AGY-UNTRUSTED nonce=ab>>>\n" + "r".repeat(5000) + "\n<<<END nonce=ab>>>",
+    } as never;
+    const c = compactRecord({ ...base, envelope: env });
+    expect("outputTail" in (c.envelope!.verify as object)).toBe(false);
+    expect(c.envelope!.untrustedReport.length).toBeLessThan(3000);
+    expect(c.envelope!.untrustedReport.endsWith("<<<END nonce=ab>>>")).toBe(true);
+    const failed = compactRecord({
+      ...base,
+      envelope: {
+        ...(env as object),
+        state: "failed",
+        verify: { ...verify, passed: false },
+      } as never,
+    });
+    expect(failed.envelope!.verify!.outputTail.length).toBe(1500);
+  });
+});

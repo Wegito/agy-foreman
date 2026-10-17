@@ -127,6 +127,37 @@ export function firstOpenItem(markdown: string): string | undefined {
   return m ? m[1].trim() : undefined;
 }
 
+/**
+ * What agy_get returns: the record without bulky fields the orchestrator rarely needs. A passed
+ * job drops the test-output tail; a failed one keeps its last 1500 chars. The untrusted report is
+ * capped. (Found live: a passed job returned ~6k tokens, mostly test output.)
+ */
+export function compactRecord(rec: JobRecord): JobRecord {
+  const e = rec.envelope;
+  if (!e) return rec;
+  const verify = e.verify
+    ? e.state === "passed"
+      ? (({ outputTail: _tail, ...v }) => v)(e.verify)
+      : { ...e.verify, outputTail: e.verify.outputTail.slice(-1500) }
+    : undefined;
+  const report =
+    e.untrustedReport.length > 3000
+      ? [
+          e.untrustedReport.slice(0, 2600),
+          "[… report truncated …]",
+          e.untrustedReport.slice(e.untrustedReport.lastIndexOf("<<<END")),
+        ].join("\n")
+      : e.untrustedReport;
+  return {
+    ...rec,
+    envelope: {
+      ...e,
+      ...(verify ? { verify: verify as typeof e.verify } : {}),
+      untrustedReport: report,
+    },
+  };
+}
+
 export class JobManager {
   private activeJobs = new Set<string>();
   private idleWaiters = new Set<() => void>();
@@ -887,8 +918,9 @@ export class JobManager {
     }
 
     const result: JobRecord & { diff?: string } = {
-      ...rec,
-      ...(diff !== undefined ? { diff } : {}),
+      ...compactRecord(rec),
+      // diffStat already sits in the envelope; only full/paths diffs are added.
+      ...(diff !== undefined && o?.diffMode !== "stat" ? { diff } : {}),
     };
     const jsonChars = JSON.stringify(result).length;
     rec.returnedChars = (rec.returnedChars ?? 0) + jsonChars;

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { KeyedQueue, renameWithRetry } from "./fsutil.js";
 import type { Envelope, JobState } from "../pipeline/index.js";
 import type { Incident } from "./incidents.js";
 
@@ -78,13 +79,18 @@ export function emptyProgress(): Progress {
 export class JobStore {
   constructor(readonly dir: string) {}
 
+  private queue = new KeyedQueue();
+
+  /** Atomic, serialized per job, and retried on Windows' transient rename locks. */
   async write(rec: JobRecord): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    const finalPath = path.join(this.dir, `${rec.id}.json`);
-    const rand = randomBytes(4).toString("hex");
-    const tmpPath = `${finalPath}.${process.pid}.${rand}.tmp`;
-    await writeFile(tmpPath, JSON.stringify(rec, null, 2), "utf8");
-    await rename(tmpPath, finalPath);
+    const snapshot = JSON.stringify(rec, null, 2);
+    await this.queue.run(rec.id, async () => {
+      await mkdir(this.dir, { recursive: true });
+      const finalPath = path.join(this.dir, `${rec.id}.json`);
+      const tmpPath = `${finalPath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+      await writeFile(tmpPath, snapshot, "utf8");
+      await renameWithRetry(tmpPath, finalPath);
+    });
   }
 
   async read(id: string): Promise<JobRecord | undefined> {
