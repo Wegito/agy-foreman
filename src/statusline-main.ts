@@ -72,5 +72,12 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+// Only the dedicated dist/statusline.js bundle may run main(). This module is also bundled into
+// dist/index.js (the MCP server), where import.meta.url is index.js; running main() there consumed
+// the server's MCP stdin and exited, so Claude Code timed out connecting.
+const self = fileURLToPath(import.meta.url);
+const isMain =
+  path.basename(self) === "statusline.js" &&
+  !!process.argv[1] &&
+  path.resolve(process.argv[1]) === self;
 if (isMain) void main();
