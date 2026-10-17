@@ -1,15 +1,11 @@
 // Lightweight entry for Claude Code's status line (dist/statusline.js). Claude Code runs it every
 // couple of seconds, so it must not load the MCP server: only job files, the quota cache and render.
+// It never starts processes (the MCP server keeps the quota cache fresh).
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { jobsDir, stateDir } from "./paths.js";
 import { previousStatusLine, recentJobs, renderStatusLine } from "./statusline.js";
-import { maybeRefreshInBackground, readQuotaCache, refreshQuota } from "./usage-quota.js";
-
-export function quotaFiles(env: NodeJS.ProcessEnv): { file: string; lockFile: string } {
-  const dir = stateDir({ env });
-  return { file: path.join(dir, "quota.json"), lockFile: path.join(dir, "quota.lock") };
-}
+import { quotaFile, readQuotaCache } from "./usage-quota.js";
 
 /**
  * The status line text: an optional wrapped previous status line, our row, and a blank spacer row
@@ -19,12 +15,9 @@ export async function statusLineText(o: {
   env: NodeJS.ProcessEnv;
   cwd: string;
   stdin: string;
-  entry: string;
   now?: Date;
 }): Promise<string> {
   const now = o.now ?? new Date();
-  const q = quotaFiles(o.env);
-  maybeRefreshInBackground({ ...q, entry: o.entry, now });
   const prev = await previousStatusLine(
     path.join(stateDir({ env: o.env }), "statusline-wrap.json"),
     o.stdin,
@@ -32,7 +25,7 @@ export async function statusLineText(o: {
   );
   const ours = renderStatusLine(await recentJobs(jobsDir({ env: o.env })), now, {
     color: o.env.NO_COLOR === undefined,
-    quota: readQuotaCache(q.file),
+    quota: readQuotaCache(quotaFile(o.env)),
     ...(Number(o.env.COLUMNS) > 0 ? { columns: Number(o.env.COLUMNS) } : {}),
   });
   const row = [prev, ours].filter(Boolean).join("  │  ");
@@ -54,19 +47,10 @@ async function readStdin(ms = 300): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const entry = fileURLToPath(import.meta.url);
-  if (process.argv.includes("--refresh-quota")) {
-    await refreshQuota({
-      agyPath: process.env.AGY_PATH || "agy",
-      file: quotaFiles(process.env).file,
-    });
-    return;
-  }
   const text = await statusLineText({
     env: process.env,
     cwd: process.cwd(),
     stdin: await readStdin(),
-    entry,
   });
   if (text) process.stdout.write(text + "\n");
   process.exit(0);

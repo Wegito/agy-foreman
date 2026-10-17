@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +52,8 @@ describe("built MCP server", () => {
       await new Promise((r) => setTimeout(r, 100));
     const alive = child.exitCode === null;
     child.kill();
+    await new Promise((r) => child.once("exit", r));
+    rmSync(out, { recursive: true, force: true });
     expect(stdout).toContain('"serverInfo"');
     expect(alive).toBe(true);
   }, 60_000);

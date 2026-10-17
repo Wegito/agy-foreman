@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, loadRuntimeConfig } from "./config.js";
 import { ClientModeApprover } from "./jobs/approver.js";
 import { renderProgressLine } from "./jobs/progress.js";
 import { isTerminal, JobStore, type JobRecord } from "./jobs/store.js";
@@ -21,6 +21,7 @@ import {
   uninstallStatusLine,
   type InstallResult,
 } from "./statusline.js";
+import { quotaFile, refreshQuota, startQuotaRefresher } from "./usage-quota.js";
 
 export interface Io {
   out: (s: string) => void;
@@ -265,6 +266,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
       defaultRepoRoot: () => io.cwd,
       version: "0.0.1",
     });
+    const quota = startQuotaRefresher({
+      file: quotaFile(io.env),
+      isActive: async () =>
+        (await recentJobs(jobsDir({ env: io.env }))).some((j) => !isTerminal(j.state)),
+      refresh: () =>
+        refreshQuota({ agyPath: loadRuntimeConfig(io.env).agyPath, file: quotaFile(io.env) }),
+    });
     const transport = new StdioServerTransport();
     await server.connect(transport);
     await new Promise<void>((resolve) => {
@@ -272,6 +280,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
       process.stdin.on("close", () => resolve());
       process.stdin.on("end", () => resolve());
     });
+    quota.stop();
     return 0;
   }
 
@@ -352,7 +361,6 @@ export async function main(argv: string[], io: Io): Promise<number> {
       env: io.env,
       cwd: io.cwd,
       stdin: io.stdin ? await io.stdin() : "",
-      entry: path.join(path.dirname(cliEntry()), "statusline.js"),
     });
     if (text) io.out(text);
     return 0;

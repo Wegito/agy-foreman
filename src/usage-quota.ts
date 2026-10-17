@@ -1,8 +1,9 @@
 // Remaining Gemini quota from `agy -p /usage` (answered by the CLI itself: no model call, no
-// tokens), cached on disk and refreshed in the background so the status line never waits on it.
+// tokens), cached on disk. The MCP server refreshes it while a job runs; the status line only reads it.
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { stateDir } from "./paths.js";
 
 export interface QuotaWindow {
   remaining: number;
@@ -14,10 +15,12 @@ export interface QuotaSnapshot {
   fetchedAt: string;
 }
 
-/** Cache older than this triggers a background refresh (the status line itself only reads the cache). */
+/** Cache older than this is refreshed while a job runs. */
 export const QUOTA_MAX_AGE_MS = 60_000;
-/** A refresh started less than this ago is assumed to still be running. */
-const LOCK_MS = 90_000;
+
+export function quotaFile(env: NodeJS.ProcessEnv): string {
+  return path.join(stateDir({ env }), "quota.json");
+}
 
 /**
  * Parses the tab-separated `agy -p /usage` report, e.g.
@@ -46,7 +49,7 @@ export function readQuotaCache(file: string): QuotaSnapshot | undefined {
   }
 }
 
-/** Runs `agy -p /usage` and writes the cache. Used by the detached refresher process. */
+/** Runs `agy -p /usage` and writes the cache. */
 export async function refreshQuota(o: {
   agyPath: string;
   file: string;
@@ -76,27 +79,38 @@ export async function refreshQuota(o: {
 }
 
 /**
- * Starts a detached `<entry> --refresh-quota` when the cache is stale and no refresh is in flight.
- * Returns true when a refresh was started.
+ * Keeps the quota cache fresh, but only while a job is active. It runs inside the MCP server so the
+ * status line never starts processes: every `agy -p` also boots each MCP server in the user's agy
+ * config, and on Windows those console programs flashed a window about once a minute, even when idle.
  */
-export function maybeRefreshInBackground(o: {
+export function startQuotaRefresher(o: {
   file: string;
-  lockFile: string;
-  entry: string;
-  now: Date;
-}): boolean {
-  if (!existsSync(o.entry)) return false;
-  const cache = readQuotaCache(o.file);
-  if (cache && o.now.getTime() - Date.parse(cache.fetchedAt) < QUOTA_MAX_AGE_MS) return false;
-  if (existsSync(o.lockFile) && o.now.getTime() - statSync(o.lockFile).mtimeMs < LOCK_MS)
-    return false;
-  mkdirSync(path.dirname(o.lockFile), { recursive: true });
-  writeFileSync(o.lockFile, String(process.pid));
-  const child = spawn(process.execPath, [o.entry, "--refresh-quota"], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  child.unref();
-  return true;
+  isActive: () => Promise<boolean>;
+  refresh: () => Promise<unknown>;
+  now?: () => Date;
+  everyMs?: number;
+}): { tick: () => Promise<void>; stop: () => void } {
+  const now = o.now ?? (() => new Date());
+  let busy = false;
+  let lastAttempt = -Infinity;
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const t = now().getTime();
+      const cache = readQuotaCache(o.file);
+      const fresh = cache && t - Date.parse(cache.fetchedAt) < QUOTA_MAX_AGE_MS;
+      // lastAttempt also throttles failed refreshes, which leave the cache stale.
+      if (fresh || t - lastAttempt < QUOTA_MAX_AGE_MS || !(await o.isActive())) return;
+      lastAttempt = t;
+      await o.refresh();
+    } catch {
+      // the quota display is best effort
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = setInterval(() => void tick(), o.everyMs ?? 10_000);
+  timer.unref();
+  return { tick, stop: () => clearInterval(timer) };
 }
