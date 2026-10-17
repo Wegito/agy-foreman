@@ -47,3 +47,14 @@ describe("expandHome", () => {
     expect(expandHome(".claude/skills", "/home/u")).toBe(".claude/skills");
   });
 });
+
+describe("AGYO_STATE_DIR", () => {
+  it("overrides the state dir on every platform", () => {
+    expect(
+      stateDir({ platform: "win32", env: { AGYO_STATE_DIR: "D:\\agyo" }, home: "C:\\Users\\u" }),
+    ).toBe("D:\\agyo");
+    expect(
+      jobsDir({ platform: "linux", env: { AGYO_STATE_DIR: "/tmp/agyo" }, home: "/home/u" }),
+    ).toBe("/tmp/agyo/jobs");
+  });
+});
