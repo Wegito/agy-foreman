@@ -1,0 +1,32 @@
+{
+  "test_command": [
+    "npx",
+    "vitest",
+    "run",
+    "--reporter=default",
+    "--reporter=junit",
+    "--outputFile.junit=reports/junit.xml"
+  ],
+  "test_report": "reports/junit.xml",
+  "setup_command": ["npm", "ci", "--no-audit", "--no-fund"],
+  "allowed_commands": [
+    "npx vitest",
+    "npx tsc",
+    "npx prettier",
+    "npm test",
+    "npm run typecheck",
+    "npm run format",
+    "npm run format:check",
+    "npm run build"
+  ],
+  "protected_paths": [
+    "tests/**",
+    "test/**",
+    "**/*.test.*",
+    "docs/**",
+    ".github/**",
+    "package.json",
+    "package-lock.json",
+    ".agy-orchestrator.json"
+  ]
+}

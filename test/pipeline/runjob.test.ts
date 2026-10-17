@@ -130,6 +130,35 @@ describe("runJob implement", () => {
     expect(env.reason).toMatch(/test_command/);
   }, 60_000);
 
+  it("runs setup_command in the fresh worktree before any test run", async () => {
+    const { spec, deps } = setup("implement", {
+      FAKE_AGY_EDITS: JSON.stringify({ "src/add.mjs": "export const add = (a, b) => a + b;\n" }),
+    });
+    spec.config = parseProjectConfig({
+      test_command: ["node", "run.mjs"],
+      test_report: "reports/junit.xml",
+      setup_command: [
+        "node",
+        "-e",
+        "require('fs').mkdirSync('.agy-task',{recursive:true});require('fs').writeFileSync('.agy-task/setup.done','1')",
+      ],
+    });
+    const env = await runJob(spec, deps);
+    expect(env.state).toBe("passed");
+    expect(existsSync(path.join(env.worktreePath, ".agy-task", "setup.done"))).toBe(true);
+  }, 60_000);
+
+  it("stops with an error when setup_command fails", async () => {
+    const { spec, deps } = setup("implement");
+    spec.config = parseProjectConfig({
+      test_command: ["node", "run.mjs"],
+      setup_command: ["node", "-e", "console.error('no network'); process.exit(7)"],
+    });
+    const env = await runJob(spec, deps);
+    expect(env.state).toBe("error");
+    expect(env.reason).toMatch(/setup_command failed \(exit 7\).*no network/s);
+  }, 60_000);
+
   it("maps quota to state quota with the reset time", async () => {
     const { spec, deps } = setup("quota-exit");
     const env = await runJob(spec, deps);

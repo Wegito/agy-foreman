@@ -171,6 +171,32 @@ async function runImplementJob(
   await excludeInRepo(spec.repoRoot, [".agents/", ".agy-task/"]);
   const snapshot = await snapshotGitState(spec.repoRoot, wt.branch ?? undefined);
 
+  // A fresh worktree has no dependencies (node_modules, venv…): install them before any test run.
+  if (spec.config.setupCommand) {
+    const setup = await runCommand(spec.config.setupCommand, {
+      cwd: wt.path,
+      timeoutMs: 15 * 60_000,
+    });
+    if (setup.code !== 0 || setup.timedOut) {
+      const tail = (setup.stdout + setup.stderr).slice(-1500).trim();
+      return {
+        jobId: spec.jobId,
+        kind: "implement",
+        state: "error",
+        reason: `setup_command failed (${setup.timedOut ? "timed out" : `exit ${setup.code}`}): ${tail}`,
+        branch: wt.branch,
+        worktreePath: wt.path,
+        baseSha: wt.baseSha,
+        untrustedReport: fenceUntrusted("", randomBytes(4).toString("hex")),
+        deniedCommands: [],
+        guardEvents: [],
+        skillsUsed: [],
+        model: spec.config.model,
+        durationSec: (deps.now().getTime() - startTime.getTime()) / 1000,
+      };
+    }
+  }
+
   // 2. contract
   deps.onPhase?.("contract");
   let contractInfo: { redOnBase: boolean; greenAfter: boolean } | undefined = undefined;
