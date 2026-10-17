@@ -29,7 +29,10 @@ describe("tool inputs", () => {
       dryRun: true,
       baseRef: "main",
     });
-    expect(toStartInput(z.object(startShape).parse({ kind: "explore", task: "y", repo: "/r" }), "/def").repoRoot).toBe("/r");
+    expect(
+      toStartInput(z.object(startShape).parse({ kind: "explore", task: "y", repo: "/r" }), "/def")
+        .repoRoot,
+    ).toBe("/r");
   });
 
   it("validates agy_act per action with the existing error texts", () => {
@@ -51,11 +54,28 @@ describe("tool inputs", () => {
       value: { action: "finalize", jobId: "t", mode: "squash" },
     });
     expect(
-      parse({ action: "lesson", text: "x", audience: "implementer", scope: "project", tags: ["a"], job_id: "t" }),
+      parse({
+        action: "lesson",
+        text: "x",
+        audience: "implementer",
+        scope: "project",
+        tags: ["a"],
+        job_id: "t",
+      }),
     ).toEqual({
       ok: true,
-      value: { action: "lesson", text: "x", audience: "implementer", scope: "project", tags: ["a"], jobId: "t" },
+      value: {
+        action: "lesson",
+        text: "x",
+        audience: "implementer",
+        scope: "project",
+        tags: ["a"],
+        jobId: "t",
+      },
     });
-    expect(parse({ action: "resume_delegation" })).toEqual({ ok: true, value: { action: "resume_delegation" } });
+    expect(parse({ action: "resume_delegation" })).toEqual({
+      ok: true,
+      value: { action: "resume_delegation" },
+    });
   });
 });

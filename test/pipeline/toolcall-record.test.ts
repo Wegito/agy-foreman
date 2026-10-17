@@ -31,7 +31,13 @@ describe("tool-call record", () => {
   it("appends review entries and reads them back in order, skipping broken lines", () => {
     const d = dir();
     expect(readReview(d)).toEqual([]);
-    appendReview(d, { t: "1", name: "run_command", decision: "deny", reason: "x", arg: "git push" });
+    appendReview(d, {
+      t: "1",
+      name: "run_command",
+      decision: "deny",
+      reason: "x",
+      arg: "git push",
+    });
     appendFileSync(path.join(d, REVIEW_FILE), "{broken\n");
     appendReview(d, { t: "2", name: "view_file", decision: "auto_approve", arg: "src/a.ts" });
     expect(readReview(d).map((e) => e.t)).toEqual(["1", "2"]);

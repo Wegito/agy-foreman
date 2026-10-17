@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:ci": "tsc --noEmit && vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml"
+    "test:ci": "tsc --noEmit && prettier --check src test && vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml"
   },
   "keywords": [
     "mcp",

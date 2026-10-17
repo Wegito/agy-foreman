@@ -7,7 +7,8 @@ import { FlagStore } from "../../src/jobs/flags.js";
 import { FakeApprover } from "../../src/jobs/approver.js";
 
 const NOW = new Date("2026-10-17T12:00:00Z");
-const flags = () => new FlagStore(path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-pol-")), "f.json"));
+const flags = () =>
+  new FlagStore(path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-pol-")), "f.json"));
 
 describe("PlanGrants", () => {
   it("covers the granted steps of the same plan file in the same repo, with the same content", async () => {
@@ -43,7 +44,10 @@ describe("DelegationPolicy", () => {
     const p = new DelegationPolicy(f, new FakeApprover(), () => NOW);
     const r = await p.check("/r");
     expect(r.ok).toBe(false);
-    expect(!r.ok && r.result).toMatchObject({ state: "refused", reason: expect.stringMatching(/paused/) });
+    expect(!r.ok && r.result).toMatchObject({
+      state: "refused",
+      reason: expect.stringMatching(/paused/),
+    });
     await p.resume();
     expect(await p.check("/r")).toEqual({ ok: true });
     expect((await p.state()).delegation).toBe("active");
@@ -54,21 +58,41 @@ describe("DelegationPolicy", () => {
     const p = new DelegationPolicy(f, new FakeApprover({ quota: "wait" }), () => NOW);
     expect(await p.onQuota({ resetInSec: 10, resetText: "10s", pausedJobId: "t-1" })).toBe("wait");
     const s = await p.state();
-    expect(s.cooldown).toEqual({ until: new Date(NOW.getTime() + 60_000).toISOString(), resetText: "10s" });
+    expect(s.cooldown).toEqual({
+      until: new Date(NOW.getTime() + 60_000).toISOString(),
+      resetText: "10s",
+    });
     const r = await p.check("/r");
-    expect(!r.ok && r.result).toMatchObject({ state: "quota", options: ["retry", "continue_without", "wait"] });
+    expect(!r.ok && r.result).toMatchObject({
+      state: "quota",
+      options: ["retry", "continue_without", "wait"],
+    });
   });
 
   it("retry clears the cooldown; continue_without pauses delegation", async () => {
     const f = flags();
-    await f.update((x) => ({ ...x, cooldownUntil: new Date(NOW.getTime() + 600_000).toISOString(), cooldownText: "10m" }));
-    expect(await new DelegationPolicy(f, new FakeApprover({ quota: "retry" }), () => NOW).check("/r")).toEqual({ ok: true });
-    expect((await new DelegationPolicy(f, new FakeApprover(), () => NOW).state()).cooldown).toBeUndefined();
+    await f.update((x) => ({
+      ...x,
+      cooldownUntil: new Date(NOW.getTime() + 600_000).toISOString(),
+      cooldownText: "10m",
+    }));
+    expect(
+      await new DelegationPolicy(f, new FakeApprover({ quota: "retry" }), () => NOW).check("/r"),
+    ).toEqual({ ok: true });
+    expect(
+      (await new DelegationPolicy(f, new FakeApprover(), () => NOW).state()).cooldown,
+    ).toBeUndefined();
 
-    await f.update((x) => ({ ...x, cooldownUntil: new Date(NOW.getTime() + 600_000).toISOString() }));
+    await f.update((x) => ({
+      ...x,
+      cooldownUntil: new Date(NOW.getTime() + 600_000).toISOString(),
+    }));
     const p = new DelegationPolicy(f, new FakeApprover({ quota: "continue_without" }), () => NOW);
     const r = await p.check("/r");
-    expect(!r.ok && r.result).toMatchObject({ state: "refused", reason: "continue without Gemini" });
+    expect(!r.ok && r.result).toMatchObject({
+      state: "refused",
+      reason: "continue without Gemini",
+    });
     expect((await p.state()).delegation).toBe("paused");
   });
 });

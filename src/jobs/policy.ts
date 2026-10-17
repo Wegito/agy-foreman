@@ -129,7 +129,10 @@ export class DelegationPolicy {
     });
   }
 
-  async state(): Promise<{ delegation: "active" | "paused"; cooldown?: { until: string; resetText?: string } }> {
+  async state(): Promise<{
+    delegation: "active" | "paused";
+    cooldown?: { until: string; resetText?: string };
+  }> {
     const flags = await this.flags.read();
     const delegation = flags.delegationPaused ? "paused" : "active";
     const cooldown =

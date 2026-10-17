@@ -25,9 +25,32 @@ describe("watchJob", () => {
     const s = store();
     await s.write(rec());
     const seen: number[] = [];
-    setTimeout(() => void s.write(rec({ updatedAt: "2026-10-17T12:00:01.000Z", progress: { ...emptyProgress(), percent: 50 } })), 60);
-    setTimeout(() => void s.write(rec({ state: "passed", updatedAt: "2026-10-17T12:00:02.000Z", progress: { ...emptyProgress(), percent: 100 } })), 160);
-    const final = await watchJob(s, "t-1", { intervalMs: 20, timeoutMs: 3000, onUpdate: (r) => seen.push(r.progress.percent) });
+    setTimeout(
+      () =>
+        void s.write(
+          rec({
+            updatedAt: "2026-10-17T12:00:01.000Z",
+            progress: { ...emptyProgress(), percent: 50 },
+          }),
+        ),
+      60,
+    );
+    setTimeout(
+      () =>
+        void s.write(
+          rec({
+            state: "passed",
+            updatedAt: "2026-10-17T12:00:02.000Z",
+            progress: { ...emptyProgress(), percent: 100 },
+          }),
+        ),
+      160,
+    );
+    const final = await watchJob(s, "t-1", {
+      intervalMs: 20,
+      timeoutMs: 3000,
+      onUpdate: (r) => seen.push(r.progress.percent),
+    });
     expect(final?.state).toBe("passed");
     expect(seen).toContain(50);
     expect(seen[seen.length - 1]).toBe(100);
