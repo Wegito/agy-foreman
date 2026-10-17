@@ -148,6 +148,8 @@ export async function executeJob(
   if (runError !== undefined) {
     const reason = runError instanceof Error ? runError.message : String(runError);
     record.state = "error";
+    // Found live: a job ended as "error" with no trace of why.
+    record.errorReason = reason;
     record.progress.phase = "done";
     record.progress.percent = 100;
     record.progress.elapsedSec = (ctx.deps.now().getTime() - jobStartTime.getTime()) / 1000;

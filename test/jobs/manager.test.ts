@@ -36,7 +36,12 @@ function envelope(
 }
 
 function setup(
-  o: { approver?: FakeApprover; result?: (spec: JobSpec) => Envelope; config?: object } = {},
+  o: {
+    approver?: FakeApprover;
+    result?: (spec: JobSpec) => Envelope;
+    config?: object;
+    fail?: string;
+  } = {},
 ) {
   const state = mkdtempSync(path.join(os.tmpdir(), "foreman-mgr-"));
   const repo = makeRepo({ "a.txt": "a" });
@@ -51,6 +56,7 @@ function setup(
     runJob: async (spec: JobSpec, pd: PipelineDeps) => {
       specs.push(spec);
       pd.onPhase?.("run");
+      if (o.fail) throw new Error(o.fail);
       await new Promise((r) => setTimeout(r, 20));
       return (o.result ?? ((s) => envelope(s, "passed")))(spec);
     },
@@ -337,5 +343,17 @@ describe("compactRecord", () => {
       } as never,
     });
     expect(failed.envelope!.verify!.outputTail.length).toBe(1500);
+  });
+});
+
+// Regression (found live): a job ended as "error" and the reason was thrown away.
+describe("pipeline errors", () => {
+  it("keeps the error message on the job record", async () => {
+    const { m, repo } = setup({ fail: "agy exploded" });
+    const r = await m.start({ repoRoot: repo, kind: "implement", task: "Fix it", estimate: EST });
+    await m.idle();
+    const rec = await m.get((r as { jobId: string }).jobId);
+    expect(rec?.state).toBe("error");
+    expect(rec?.errorReason).toBe("agy exploded");
   });
 });
