@@ -106,6 +106,12 @@ function isSamePath(p1: string, p2: string): boolean {
     : norm1 === norm2;
 }
 
+/** Text of the first unticked "- [ ] item" in a progress checklist, if any. */
+export function firstOpenItem(markdown: string): string | undefined {
+  const m = /^\s*[-*]\s+\[ \]\s+(.+)$/m.exec(markdown);
+  return m ? m[1].trim() : undefined;
+}
+
 export class JobManager {
   private activeJobs = new Set<string>();
   private idleWaiters = new Set<() => void>();
@@ -379,7 +385,10 @@ export class JobManager {
       repoRoot: i.repoRoot,
       title,
       state: "queued",
-      progress: emptyProgress(),
+      // Seed the checklist so the status line shows "1/N <task>" before Gemini's first tick.
+      progress: checklist
+        ? { ...emptyProgress(), checklistTotal: checklist.length, currentStep: checklist[0] }
+        : emptyProgress(),
       createdAt: this.deps.now().toISOString(),
       updatedAt: this.deps.now().toISOString(),
       ...(i.plan ? { plan: { file: i.plan.file, step: i.plan.step } } : {}),
@@ -510,7 +519,8 @@ export class JobManager {
           record.progress.tokens = ev.usage.totalTokens;
           changed = true;
         }
-        if (ev.toolName && ev.toolName.includes("write_to_file")) {
+        // Gemini ticks the checklist with write_to_file or (more often) replace_file_content.
+        if (ev.toolName && /write_to_file|replace_file_content/.test(ev.toolName)) {
           const progressFile = path.join(worktreePath, ".agy-task", "progress.md");
           const target = params?.TargetFile ?? params?.targetFile;
           if (
@@ -522,6 +532,7 @@ export class JobManager {
               const frac = progressFraction(content);
               record.progress.checklistDone = frac.done;
               record.progress.checklistTotal = frac.total;
+              record.progress.currentStep = firstOpenItem(content);
               changed = true;
             } catch {
               // ignore

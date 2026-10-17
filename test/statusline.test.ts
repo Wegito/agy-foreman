@@ -5,6 +5,8 @@ import path from "node:path";
 import {
   renderStatusLine,
   formatElapsed,
+  formatTokens,
+  cleanTitle,
   recentJobs,
   installStatusLine,
   uninstallStatusLine,
@@ -27,40 +29,104 @@ const job = (o: Partial<JobRecord> & { id: string }): JobRecord => ({
 });
 
 describe("renderStatusLine", () => {
-  it("shows bar, percent, phase, task title, step and elapsed time, and no estimate", () => {
+  const S = "  ·  ";
+  it("shows bar, percent, title, current task count, elapsed time and tokens, and no estimate", () => {
     const line = renderStatusLine([job({ id: "t-a" })], NOW, { color: false });
     expect(line).toBe(
-      'agy ██████░░░░░░ 47% · run · "Incidents and the lesson store" · step 2/5 · 4m12s',
+      [
+        "agy ━━━━━━━━──────── 47%",
+        "Incidents and the lesson store",
+        "› 3/5",
+        "4m12s",
+        "0 tok",
+      ].join(S),
     );
     expect(line).not.toMatch(/ETA|remaining/i);
+  });
+  it("shows the plan step, clean title, current task, and job + plan tokens", () => {
+    const running = job({
+      id: "t-b",
+      title: "Learning loop in `JobManager` and the **MCP** lesson action",
+      plan: { file: "p.md", step: 2 },
+      progress: {
+        ...emptyProgress(),
+        percent: 47,
+        phase: "run",
+        checklistDone: 2,
+        checklistTotal: 5,
+        tokens: 312_400,
+        currentStep: "Implement src/jobs/manager.ts",
+      },
+    });
+    const earlier = job({
+      id: "t-a",
+      state: "passed",
+      plan: { file: "p.md", step: 1 },
+      updatedAt: "2026-10-17T13:00:00Z",
+      envelope: { usage: { totalTokens: 331_658 } } as never,
+    });
+    expect(renderStatusLine([earlier, running], NOW, { color: false })).toBe(
+      [
+        "agy ━━━━━━━━──────── 47%",
+        "#2 Learning loop in JobManager and the MCP…",
+        "› 3/5 Implement src/jobs/manager.ts",
+        "4m12s",
+        "312k tok",
+        "plan 644k",
+      ].join(S),
+    );
+  });
+  it("names the phase outside the run phase", () => {
+    const v = job({ id: "t-a", progress: { ...emptyProgress(), percent: 88, phase: "verify" } });
+    expect(renderStatusLine([v], NOW, { color: false })).toContain("› verifying");
+  });
+  it("fits narrow terminals by dropping the least important parts", () => {
+    const line = renderStatusLine([job({ id: "t-a", plan: { file: "p.md", step: 2 } })], NOW, {
+      color: false,
+      columns: 60,
+    });
+    expect(line.length).toBeLessThanOrEqual(60);
+    expect(line).toContain("47%");
+    expect(line).toContain("#2");
   });
   it("mentions other active jobs and shows queued ones", () => {
     const a = job({ id: "t-a" });
     const b = job({ id: "t-b", state: "queued", createdAt: "2026-10-17T14:06:00Z" });
-    expect(renderStatusLine([b, a], NOW, { color: false })).toContain("· +1 more");
+    expect(renderStatusLine([b, a], NOW, { color: false, columns: 200 })).toContain("+1 more");
     expect(renderStatusLine([b], NOW, { color: false })).toBe(
-      'agy queued · "Incidents and the lesson store"',
+      ["agy", "queued", "Incidents and the lesson store"].join(S),
     );
   });
   it("shows a recently finished job, then nothing", () => {
     const done = job({ id: "t-a", state: "passed", updatedAt: "2026-10-17T14:08:00Z" });
     expect(renderStatusLine([done], NOW, { color: false })).toBe(
-      'agy ✓ passed · "Incidents and the lesson store" · took 2m12s · 2m00s ago',
+      ["agy ✓ passed", "Incidents and the lesson store", "took 2m12s", "0 tok", "2m00s ago"].join(
+        S,
+      ),
     );
     expect(renderStatusLine([done], new Date("2026-10-17T15:00:00Z"), { color: false })).toBe("");
   });
   it("uses ANSI colors by default and truncates long titles", () => {
-    expect(renderStatusLine([job({ id: "t-a" })], NOW)).toContain("\x1b[");
+    expect(renderStatusLine([job({ id: "t-a" })], NOW)).toContain("[");
     expect(
       renderStatusLine([job({ id: "t-a", title: "x".repeat(80) })], NOW, { color: false }),
-    ).toContain("x".repeat(47) + "…");
+    ).toContain("x".repeat(43) + "…");
   });
-  it("formats elapsed time compactly", () => {
+  it("formats elapsed time, tokens and titles compactly", () => {
     expect([formatElapsed(5_000), formatElapsed(252_000), formatElapsed(3_900_000)]).toEqual([
       "5s",
       "4m12s",
       "1h05m",
     ]);
+    expect([
+      formatTokens(412),
+      formatTokens(31_200),
+      formatTokens(1_250_000),
+      formatTokens(2_000_000),
+    ]).toEqual(["412", "31k", "1.3M", "2M"]);
+    expect(
+      cleanTitle("Task 2: Learning loop in `JobManager` and the **MCP** `lesson` action"),
+    ).toBe("Learning loop in JobManager and the MCP lesson action");
   });
 });
 
@@ -94,7 +160,7 @@ describe("install / uninstall", () => {
       type: "command",
       command: 'node "C:/x/agy-orchestrator/dist/index.js" statusline',
       padding: 0,
-      refreshInterval: 2,
+      refreshInterval: 1,
     });
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "already_installed" });
     expect(await uninstallStatusLine(f)).toBe("removed");
@@ -113,7 +179,7 @@ describe("install / uninstall", () => {
       }),
     );
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "installed" });
-    expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine.refreshInterval).toBe(2);
+    expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine.refreshInterval).toBe(1);
   });
 
   it("wraps an existing status line and restores it on uninstall", async () => {
@@ -148,7 +214,7 @@ describe("cli statusline", () => {
     };
     expect(await main(["statusline"], io)).toBe(0);
     expect(out[0]).toMatch(
-      /^agy ██████░░░░░░ 47% · run · "Incidents and the lesson store" · step 2\/5 · 1m0[5-9]s$/,
+      /^agy ━━━━━━━━──────── 47%  ·  Incidents and the lesson store  ·  › 3\/5  ·  1m0[5-9]s  ·  0 tok$/,
     );
   });
   it("init does not touch Claude settings when no home is known", async () => {

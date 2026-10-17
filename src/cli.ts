@@ -346,6 +346,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
     const prev = await previousStatusLine(files.wrapFile, stdin, io.cwd);
     const ours = renderStatusLine(await recentJobs(jobsDir({ env: io.env })), new Date(), {
       color: io.env.NO_COLOR === undefined,
+      // Claude Code passes the terminal size via COLUMNS (tput cannot read it from a pipe).
+      ...(Number(io.env.COLUMNS) > 0 ? { columns: Number(io.env.COLUMNS) } : {}),
     });
     io.out([prev, ours].filter(Boolean).join("  │  "));
     return 0;
