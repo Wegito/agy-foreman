@@ -62,6 +62,15 @@ const defaultDeps: RunDeps = {
   graceSec: 15,
 };
 
+/**
+ * agy encodes the effort in the model name (gemini-3.8-flash-low/-medium/-high) and rejects a
+ * separate --effort next to it, so the effort selects the model variant instead.
+ */
+export function modelFor(model: string, effort: Effort | undefined): string {
+  if (!effort) return model;
+  return `${model.replace(/-(low|medium|high)$/, "")}-${effort}`;
+}
+
 export function buildArgs(req: RunRequest, logPath: string): string[] {
   const a = [
     "-p",
@@ -69,13 +78,12 @@ export function buildArgs(req: RunRequest, logPath: string): string[] {
     "--output-format",
     "stream-json",
     "--model",
-    req.model,
+    modelFor(req.model, req.effort),
     "--print-timeout",
     `${req.timeoutSec}s`,
     "--log-file",
     logPath,
   ];
-  if (req.effort) a.push("--effort", req.effort);
   if (req.mode) a.push("--mode", req.mode);
   if (req.conversationId) a.push("--conversation", req.conversationId);
   if (req.jsonSchemaPath) a.push("--json-schema", req.jsonSchemaPath);

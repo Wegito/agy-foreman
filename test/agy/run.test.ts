@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run, buildArgs, MAX_PROMPT_CHARS, type RunRequest } from "../../src/agy/index.js";
+import {
+  run,
+  buildArgs,
+  modelFor,
+  MAX_PROMPT_CHARS,
+  type RunRequest,
+} from "../../src/agy/index.js";
 import { isAlive } from "../../src/agy/kill.js";
 import type { StreamEvent } from "../../src/agy/types.js";
 import { fixture, waitFor } from "../helpers.js";
@@ -38,19 +44,27 @@ describe("buildArgs", () => {
       "--output-format",
       "stream-json",
       "--model",
-      "gemini-3.8-flash-high",
+      "gemini-3.8-flash-medium",
       "--print-timeout",
       "20s",
       "--log-file",
       "/tmp/l.log",
-      "--effort",
-      "medium",
       "--mode",
       "accept-edits",
       "--conversation",
       "c9",
     ]);
     expect(a).not.toContain("--dangerously-skip-permissions");
+  });
+  // Regression (found live): agy rejects --effort next to a model name that already carries one
+  // ("--model gemini-3.8-flash-high conflicts with --effort=low"). Effort picks the model variant.
+  it("selects the effort through the model name and never passes --effort", () => {
+    expect(modelFor("gemini-3.8-flash-high", "low")).toBe("gemini-3.8-flash-low");
+    expect(modelFor("gemini-3.8-flash-low", undefined)).toBe("gemini-3.8-flash-low");
+    expect(modelFor("gemini-3.8-flash", "high")).toBe("gemini-3.8-flash-high");
+    const a = buildArgs(req("success", { effort: "low" }), "l");
+    expect(a).not.toContain("--effort");
+    expect(a[a.indexOf("--model") + 1]).toBe("gemini-3.8-flash-low");
   });
   it("adds opt-in flags", () => {
     const a = buildArgs(
