@@ -1,7 +1,7 @@
 {
   "name": "agy-foreman",
   "version": "0.0.1",
-  "description": "Verified, approval-gated delegation from Claude Code (or any MCP agent) to Gemini 3.8 Flash via the Antigravity CLI.",
+  "description": "Hand plan steps from Claude Code to Gemini 3.8 Flash through the Antigravity CLI, and merge only what passes your tests.",
   "type": "module",
   "bin": {
     "agy-foreman": "dist/index.js"
