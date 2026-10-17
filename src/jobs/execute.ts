@@ -209,6 +209,7 @@ export async function executeJob(
           resetText: cooldownText,
           resetAt: cooldownUntil,
           pausedJobId: record.id,
+          repoRoot: record.repoRoot,
         });
         if (choice === "retry") {
           await ctx.deps.flags.update((f) => {

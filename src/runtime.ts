@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "./agy/index.js";
 import { loadConfig, loadRuntimeConfig } from "./config.js";
-import { type Approver } from "./jobs/approver.js";
+import { RepoApprover, type Approver } from "./jobs/approver.js";
 import { FlagStore } from "./jobs/flags.js";
 import { Ledger } from "./jobs/ledger.js";
 import { LessonStore } from "./jobs/lessons.js";
@@ -27,24 +27,14 @@ export function createRuntime(o: {
   const ledger = new Ledger(path.join(sDir, "ledger.jsonl"));
   const flags = new FlagStore(path.join(sDir, "flags.json"));
 
-  const approver: Approver = {
-    plan: (c) => {
-      const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
-      return o.approverFor(gate).plan(c);
-    },
-    task: (c) => {
-      const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
-      return o.approverFor(gate).task(c);
-    },
-    quota: (c) => {
-      const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
-      return o.approverFor(gate).quota(c);
-    },
-    promote: (c) => {
-      const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
-      return o.approverFor(gate).promote(c);
-    },
-  };
+  const elicitation = o.approverFor("elicitation");
+  const client = o.approverFor("client");
+  const approver = new RepoApprover({
+    gateFor: (r) => loadConfig({ repoRoot: r, env: o.env }).project.gate,
+    elicitation,
+    client,
+    defaultRepoRoot: o.cwd,
+  });
 
   const runtimeCfg = loadRuntimeConfig(o.env);
 

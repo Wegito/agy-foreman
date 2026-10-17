@@ -4,7 +4,7 @@ import path from "node:path";
 import { git } from "../pipeline/exec.js";
 import type { JobSpec } from "../pipeline/index.js";
 import { isDirty, mergeCheck, removeWorktree, type Worktree } from "../pipeline/worktree.js";
-import { ClientModeApprover, type PromoteCard } from "./approver.js";
+import { type PromoteCard } from "./approver.js";
 import { hashPlan, validGrant } from "./flags.js";
 import { LessonError, tagsFor, type Lesson } from "./lessons.js";
 import { emptyProgress, isTerminal, newJobId, type JobRecord } from "./store.js";
@@ -47,6 +47,7 @@ export async function startFollowup(
         effort: config.project.effort,
         skills: [],
         estimate: parent.estimate,
+        repoRoot: parent.repoRoot,
       });
       if (!approved) {
         throw new Error("task approval denied");
@@ -288,11 +289,11 @@ export async function handleAct(
         lessonText: lesson.text,
         hits: lesson.hits,
         targetFile,
+        repoRoot,
       };
 
       const isClient =
-        ctx.deps.approver instanceof ClientModeApprover ||
-        (ctx.deps.approver as any).isClientMode ||
+        ctx.deps.approver.isClientMode?.(repoRoot) ??
         ctx.deps.loadConfig(repoRoot).project.gate === "client";
 
       const approved = await ctx.deps.approver.promote(card);

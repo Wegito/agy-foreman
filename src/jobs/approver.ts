@@ -5,6 +5,7 @@ export interface PlanCard {
   title: string;
   steps: number[];
   estimate?: Estimate;
+  repoRoot?: string;
 }
 
 export interface TaskCard {
@@ -13,12 +14,14 @@ export interface TaskCard {
   effort: string;
   skills: string[];
   estimate?: Estimate;
+  repoRoot?: string;
 }
 
 export interface QuotaCard {
   resetText?: string;
   resetAt?: string;
   pausedJobId?: string;
+  repoRoot?: string;
 }
 
 export type QuotaChoice = "retry" | "continue_without" | "wait";
@@ -27,6 +30,7 @@ export interface PromoteCard {
   lessonText: string;
   hits: number;
   targetFile: string;
+  repoRoot?: string;
 }
 
 export function promoteCardText(c: PromoteCard): string {
@@ -38,6 +42,7 @@ export interface Approver {
   task(c: TaskCard): Promise<boolean>;
   quota(c: QuotaCard): Promise<QuotaChoice | "unavailable">;
   promote(c: PromoteCard): Promise<boolean>;
+  isClientMode?(repoRoot: string): boolean;
 }
 
 export class ApprovalUnavailable extends Error {}
@@ -89,7 +94,9 @@ export function quotaCardText(c: QuotaCard): string {
 }
 
 export class ClientModeApprover implements Approver {
-  readonly isClientMode = true;
+  isClientMode(_repoRoot?: string): boolean {
+    return true;
+  }
 
   async plan(_c: PlanCard): Promise<boolean> {
     return true;
@@ -105,6 +112,44 @@ export class ClientModeApprover implements Approver {
 
   async promote(_c: PromoteCard): Promise<boolean> {
     return false;
+  }
+}
+
+export class RepoApprover implements Approver {
+  constructor(
+    private o: {
+      gateFor: (repoRoot: string) => "elicitation" | "client";
+      elicitation: Approver;
+      client: Approver;
+      defaultRepoRoot: string;
+    },
+  ) {}
+
+  private approverFor(repoRoot?: string): Approver {
+    const root = repoRoot ?? this.o.defaultRepoRoot;
+    const gate = this.o.gateFor(root);
+    return gate === "client" ? this.o.client : this.o.elicitation;
+  }
+
+  async plan(c: PlanCard): Promise<boolean> {
+    return this.approverFor(c.repoRoot).plan(c);
+  }
+
+  async task(c: TaskCard): Promise<boolean> {
+    return this.approverFor(c.repoRoot).task(c);
+  }
+
+  async quota(c: QuotaCard): Promise<QuotaChoice | "unavailable"> {
+    return this.approverFor(c.repoRoot).quota(c);
+  }
+
+  async promote(c: PromoteCard): Promise<boolean> {
+    return this.approverFor(c.repoRoot).promote(c);
+  }
+
+  isClientMode(repoRoot: string): boolean {
+    const root = repoRoot ?? this.o.defaultRepoRoot;
+    return this.o.gateFor(root) === "client";
   }
 }
 

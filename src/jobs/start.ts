@@ -46,6 +46,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
     const choice = await deps.approver.quota({
       resetText: flags.cooldownText,
       resetAt: flags.cooldownUntil,
+      repoRoot: i.repoRoot,
     });
     if (choice === "retry") {
       await deps.flags.update((f) => {
@@ -282,6 +283,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
           title: pTitle,
           steps,
           estimate: i.estimate,
+          repoRoot: i.repoRoot,
         });
         if (!approved) {
           return { type: "result", result: { state: "denied", reason: "plan approval denied" } };
@@ -304,6 +306,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
         effort: i.effort ?? config.project.effort,
         skills: i.skills ?? [],
         estimate: i.estimate,
+        repoRoot: i.repoRoot,
       };
       const approved = await deps.approver.task(taskCard);
       if (!approved) {
