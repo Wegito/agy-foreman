@@ -164,3 +164,15 @@ describe("doctor", () => {
     expect(checks.find((c) => c.name === "agy login")?.detail).toMatch(/run `agy` once/);
   });
 });
+
+describe("help and version", () => {
+  it("prints the version from package.json and a command list", async () => {
+    const out: string[] = [];
+    const io: Io = { out: (s) => out.push(s), err: (s) => out.push(s), env: {}, cwd: os.tmpdir() };
+    expect(await main(["--version"], io)).toBe(0);
+    const pkg = JSON.parse(readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+    expect(out[0]).toBe(pkg.version);
+    expect(await main(["--help"], io)).toBe(0);
+    expect(out[1]).toContain("install-skill");
+  });
+});

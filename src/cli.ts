@@ -24,6 +24,23 @@ import { quotaFile, refreshQuota, startQuotaRefresher } from "./usage-quota.js";
 
 export { readStdin };
 
+export const VERSION = "0.1.0";
+
+const HELP = `agy-foreman ${VERSION}: hand plan tasks from Claude Code to Gemini, merge only what passes your tests
+
+Usage: agy-foreman <command>
+
+  serve                 run the MCP server over stdio (default)
+  init                  write .agy-foreman.json for this repo and install the status line
+  doctor                check node, git, agy and the agy login
+  install-skill         install the delegation skill (--project for this repo only)
+  wait <job>            block until a job ends (exit 0 passed, 1 failed, 2 quota, 3 error)
+  watch [job]           show live progress
+  statusline            print the status line (--install / --uninstall)
+  --version, --help
+
+Docs: https://github.com/mountaser/agy-foreman`;
+
 export interface Io {
   out: (s: string) => void;
   err: (s: string) => void;
@@ -231,6 +248,15 @@ function describeInstall(r: InstallResult): string {
 export async function main(argv: string[], io: Io): Promise<number> {
   const cmd = argv[0] ?? "serve";
 
+  if (cmd === "--version" || cmd === "-v") {
+    io.out(VERSION);
+    return 0;
+  }
+  if (cmd === "--help" || cmd === "-h" || cmd === "help") {
+    io.out(HELP);
+    return 0;
+  }
+
   if (cmd === "serve") {
     let server: McpServer;
     const runtime = createRuntime({
@@ -247,7 +273,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
     await runtime.manager.recoverOrphans();
     server = createServer(runtime.manager, {
       defaultRepoRoot: () => io.cwd,
-      version: "0.1.0",
+      version: VERSION,
     });
     const quota = startQuotaRefresher({
       file: quotaFile(io.env),
