@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { isTerminal, type JobRecord } from "./jobs/store.js";
 import { runCommand } from "./pipeline/exec.js";
+import type { QuotaSnapshot, QuotaWindow } from "./usage-quota.js";
 
 /** Finished jobs stay visible in the status line for this long. */
 export const RECENT_MS = 15 * 60_000;
@@ -114,16 +115,27 @@ const STATE_ICON: Record<string, [string, string]> = {
   error: ["!", "31"],
 };
 
+/** Start → end of a plan's jobs; ends at the last job's finish, counts only while one runs. */
+export function planSpan(jobs: JobRecord[], j: JobRecord, now: Date): number | undefined {
+  if (!j.plan) return undefined;
+  const same = jobs.filter((x) => x.plan?.file === j.plan?.file);
+  if (same.length < 2) return undefined;
+  const start = Math.min(...same.map((x) => Date.parse(x.createdAt)));
+  const running = same.some((x) => !isTerminal(x.state));
+  const end = running ? now.getTime() : Math.max(...same.map((x) => Date.parse(x.updatedAt)));
+  return end - start;
+}
+
 /**
  * One status-line row. Running: label, thin bar, %, plan step + title, current checklist task
- * (or phase), elapsed time, tokens for the job and the plan. No time estimate, on purpose.
- * Finished within RECENT_MS: outcome summary. Idle: "". Fits `columns` by dropping the least
- * important segments first.
+ * (or phase), elapsed time, job tokens, plan time + tokens, Gemini quota. No time estimate.
+ * Finished within RECENT_MS: outcome, how long it took (fixed), tokens, plan totals, quota.
+ * Idle: just the quota (or "" without one). Fits `columns`, dropping the least important parts.
  */
 export function renderStatusLine(
   jobs: JobRecord[],
   now: Date,
-  o: { color?: boolean; columns?: number } = {},
+  o: { color?: boolean; columns?: number; quota?: QuotaSnapshot } = {},
 ): string {
   const color = o.color ?? true;
   const columns = Math.max(40, o.columns ?? 200);
@@ -136,15 +148,32 @@ export function renderStatusLine(
     const t = truncate(cleanTitle(j.title), Math.max(1, max - num.length));
     return { ...seg(num + t, dim(num) + ansi("1", t, color), 80), shrink: (m) => titleSeg(j, m) };
   };
-  const tokensSeg = (j: JobRecord, used: number) => {
-    const plan = planTokens(jobs, j);
+  const tokensSegs = (j: JobRecord, used: number): Segment[] => {
     const own = `${formatTokens(used)} tok`;
-    return [
-      seg(own, dim(own), 40),
-      ...(plan !== undefined
-        ? [seg(`plan ${formatTokens(plan)}`, dim(`plan ${formatTokens(plan)}`), 20)]
-        : []),
-    ];
+    const out = [seg(own, dim(own), 40)];
+    const span = planSpan(jobs, j, now);
+    const total = planTokens(jobs, j);
+    if (span !== undefined && total !== undefined) {
+      const plain = `plan ${formatElapsed(span)} · ${formatTokens(total)}`;
+      out.push(seg(plain, dim(plain), 20));
+    }
+    return out;
+  };
+  const quotaSegs = (): Segment[] => {
+    const q = o.quota;
+    if (!q || (!q.fiveHour && !q.weekly)) return [];
+    const level = (n: number) => (n >= 50 ? "32" : n >= 20 ? "33" : "31");
+    const part = (name: string, w?: QuotaWindow) =>
+      w
+        ? {
+            plain: `${name} ${Math.round(w.remaining)}%`,
+            text: `${dim(name)} ${ansi(level(w.remaining), `${Math.round(w.remaining)}%`, color)}`,
+          }
+        : undefined;
+    const parts = [part("5h", q.fiveHour), part("7d", q.weekly)].filter(
+      (x): x is { plain: string; text: string } => !!x,
+    );
+    return [seg(parts.map((x) => x.plain).join(" "), parts.map((x) => x.text).join(" "), 50)];
   };
 
   const active = jobs
@@ -156,7 +185,7 @@ export function renderStatusLine(
     const others = active.length - 1;
     if (j.state === "queued") {
       return fit(
-        [label, seg("queued", ansi("33", "queued", color), 90), titleSeg(j, 48)],
+        [label, seg("queued", ansi("33", "queued", color), 90), titleSeg(j, 48), ...quotaSegs()],
         columns,
         sep,
         sepPlain,
@@ -184,7 +213,7 @@ export function renderStatusLine(
       segments.push(seg(`› ${phase}`, `${dim("›")} ${ansi("36", phase, color)}`, 70));
     }
     const elapsed = formatElapsed(now.getTime() - Date.parse(j.createdAt));
-    segments.push(seg(elapsed, elapsed, 60), ...tokensSeg(j, p.tokens));
+    segments.push(seg(elapsed, elapsed, 60), ...tokensSegs(j, p.tokens), ...quotaSegs());
     if (others > 0) segments.push(seg(`+${others} more`, dim(`+${others} more`), 10));
     return fit(segments, columns, sep, sepPlain);
   }
@@ -192,10 +221,12 @@ export function renderStatusLine(
   const last = jobs
     .filter((j) => now.getTime() - Date.parse(j.updatedAt) <= RECENT_MS)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-  if (!last) return "";
+  if (!last) {
+    const q = quotaSegs();
+    return q.length ? fit([label, ...q], columns, sep, sepPlain) : "";
+  }
   const [icon, code] = STATE_ICON[last.state] ?? ["•", "2"];
   const took = formatElapsed(Date.parse(last.updatedAt) - Date.parse(last.createdAt));
-  const ago = formatElapsed(now.getTime() - Date.parse(last.updatedAt));
   const used = last.envelope?.usage?.totalTokens ?? last.progress.tokens;
   return fit(
     [
@@ -206,8 +237,8 @@ export function renderStatusLine(
       ),
       titleSeg(last, 44),
       seg(`took ${took}`, dim(`took ${took}`), 60),
-      ...tokensSeg(last, used),
-      seg(`${ago} ago`, dim(`${ago} ago`), 30),
+      ...tokensSegs(last, used),
+      ...quotaSegs(),
     ],
     columns,
     sep,
@@ -249,7 +280,7 @@ export interface StatusLineSetting {
  * Seconds between re-runs. Claude Code's event-driven updates go quiet while the orchestrator is
  * idle (exactly when a job runs), so a timer is needed for the bar and elapsed time to move.
  */
-export const REFRESH_INTERVAL_SEC = 1;
+export const REFRESH_INTERVAL_SEC = 2;
 
 export function claudeSettingsPath(env: NodeJS.ProcessEnv): string {
   if (env.AGYO_CLAUDE_SETTINGS) return env.AGYO_CLAUDE_SETTINGS;
@@ -259,15 +290,14 @@ export function claudeSettingsPath(env: NodeJS.ProcessEnv): string {
 
 /** Command Claude Code runs; forward slashes and quotes work in both cmd.exe and bash. */
 export function statusLineCommand(entry: string): string {
-  return `node "${entry.replace(/\\/g, "/")}" statusline`;
+  // The slim bundle next to the CLI entry; it skips the MCP server for a fast start.
+  const slim = path.join(path.dirname(entry), "statusline.js").replace(/\\/g, "/");
+  return `node "${slim}"`;
 }
 
 export function isOurs(setting: StatusLineSetting | undefined): boolean {
-  return (
-    !!setting?.command &&
-    /agy-orchestrator|statusline$/.test(setting.command) &&
-    setting.command.includes("statusline")
-  );
+  // Matches both the old `index.js" statusline` command and the slim `statusline.js` bundle.
+  return !!setting?.command && /statusline(\.js")?$/.test(setting.command.trim());
 }
 
 async function readJson(file: string): Promise<Record<string, unknown>> {
@@ -303,13 +333,14 @@ export async function installStatusLine(o: {
   const settings = await readJson(o.settingsFile);
   const current = settings.statusLine as StatusLineSetting | undefined;
   if (isOurs(current)) {
-    if (current?.refreshInterval === REFRESH_INTERVAL_SEC) {
+    const wanted = statusLineCommand(o.entry);
+    if (current?.refreshInterval === REFRESH_INTERVAL_SEC && current.command === wanted) {
       return { state: "already_installed", settings: o.settingsFile };
     }
-    // Upgrade an older install that lacked the refresh timer.
+    // Upgrade an older install (no refresh timer, or the heavy index.js command).
     await writeJsonAtomic(o.settingsFile, {
       ...settings,
-      statusLine: { ...current, refreshInterval: REFRESH_INTERVAL_SEC },
+      statusLine: { ...current, command: wanted, refreshInterval: REFRESH_INTERVAL_SEC },
     });
     return { state: "installed", settings: o.settingsFile };
   }

@@ -11,6 +11,7 @@ import { jobsDir, stateDir } from "./paths.js";
 import { runCommand, type ExecResult } from "./pipeline/exec.js";
 import { createRuntime } from "./runtime.js";
 import { createServer, ElicitationApprover } from "./server.js";
+import { statusLineText } from "./statusline-main.js";
 import {
   claudeSettingsPath,
   installStatusLine,
@@ -341,15 +342,14 @@ export async function main(argv: string[], io: Io): Promise<number> {
       io.out(`status line: ${await uninstallStatusLine(files)}`);
       return 0;
     }
-    // Claude Code pipes session JSON on stdin; only the wrapped previous status line needs it.
-    const stdin = io.stdin ? await io.stdin() : "";
-    const prev = await previousStatusLine(files.wrapFile, stdin, io.cwd);
-    const ours = renderStatusLine(await recentJobs(jobsDir({ env: io.env })), new Date(), {
-      color: io.env.NO_COLOR === undefined,
-      // Claude Code passes the terminal size via COLUMNS (tput cannot read it from a pipe).
-      ...(Number(io.env.COLUMNS) > 0 ? { columns: Number(io.env.COLUMNS) } : {}),
+    // Same output as the slim dist/statusline.js that Claude Code runs.
+    const text = await statusLineText({
+      env: io.env,
+      cwd: io.cwd,
+      stdin: io.stdin ? await io.stdin() : "",
+      entry: path.join(path.dirname(cliEntry()), "statusline.js"),
     });
-    io.out([prev, ours].filter(Boolean).join("  │  "));
+    if (text) io.out(text);
     return 0;
   }
 

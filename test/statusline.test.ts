@@ -7,6 +7,7 @@ import {
   formatElapsed,
   formatTokens,
   cleanTitle,
+  planSpan,
   recentJobs,
   installStatusLine,
   uninstallStatusLine,
@@ -72,7 +73,7 @@ describe("renderStatusLine", () => {
         "› 3/5 Implement src/jobs/manager.ts",
         "4m12s",
         "312k tok",
-        "plan 644k",
+        "plan 4m12s · 644k",
       ].join(S),
     );
   });
@@ -100,9 +101,7 @@ describe("renderStatusLine", () => {
   it("shows a recently finished job, then nothing", () => {
     const done = job({ id: "t-a", state: "passed", updatedAt: "2026-10-17T14:08:00Z" });
     expect(renderStatusLine([done], NOW, { color: false })).toBe(
-      ["agy ✓ passed", "Incidents and the lesson store", "took 2m12s", "0 tok", "2m00s ago"].join(
-        S,
-      ),
+      ["agy ✓ passed", "Incidents and the lesson store", "took 2m12s", "0 tok"].join(S),
     );
     expect(renderStatusLine([done], new Date("2026-10-17T15:00:00Z"), { color: false })).toBe("");
   });
@@ -127,6 +126,48 @@ describe("renderStatusLine", () => {
     expect(
       cleanTitle("Task 2: Learning loop in `JobManager` and the **MCP** `lesson` action"),
     ).toBe("Learning loop in JobManager and the MCP lesson action");
+  });
+});
+
+describe("quota and plan timer", () => {
+  const S = "  ·  ";
+  const quota = {
+    fiveHour: { remaining: 71, resetAt: "" },
+    weekly: { remaining: 12, resetAt: "" },
+    fetchedAt: "",
+  };
+  it("shows 5h and 7d remaining, colored by level, and alone when idle", () => {
+    expect(renderStatusLine([], NOW, { color: false, quota })).toBe(
+      ["agy", "5h 71% 7d 12%"].join(S),
+    );
+    const colored = renderStatusLine([], NOW, { quota });
+    expect(colored).toContain("[32m71%");
+    expect(colored).toContain("[31m12%");
+    expect(renderStatusLine([], NOW, { color: false })).toBe("");
+  });
+  it("stops the plan timer at the last job's end once nothing runs", () => {
+    const a = job({
+      id: "t-a",
+      state: "passed",
+      plan: { file: "p.md", step: 1 },
+      createdAt: "2026-10-17T13:00:00Z",
+      updatedAt: "2026-10-17T13:10:00Z",
+    });
+    const b = job({
+      id: "t-b",
+      state: "passed",
+      plan: { file: "p.md", step: 2 },
+      createdAt: "2026-10-17T13:20:00Z",
+      updatedAt: "2026-10-17T14:05:00Z",
+    });
+    expect(planSpan([a, b], b, NOW)).toBe(65 * 60_000);
+    expect(planSpan([a, b], b, new Date("2026-10-17T18:00:00Z"))).toBe(65 * 60_000);
+    const running = job({
+      id: "t-c",
+      plan: { file: "p.md", step: 3 },
+      createdAt: "2026-10-17T14:06:00Z",
+    });
+    expect(planSpan([a, b, running], running, NOW)).toBe(70 * 60_000);
   });
 });
 
@@ -158,9 +199,9 @@ describe("install / uninstall", () => {
     const s = JSON.parse(readFileSync(f.settingsFile, "utf8"));
     expect(s.statusLine).toEqual({
       type: "command",
-      command: 'node "C:/x/agy-orchestrator/dist/index.js" statusline',
+      command: 'node "C:/x/agy-orchestrator/dist/statusline.js"',
       padding: 0,
-      refreshInterval: 1,
+      refreshInterval: 2,
     });
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "already_installed" });
     expect(await uninstallStatusLine(f)).toBe("removed");
@@ -179,7 +220,7 @@ describe("install / uninstall", () => {
       }),
     );
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "installed" });
-    expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine.refreshInterval).toBe(1);
+    expect(JSON.parse(readFileSync(f.settingsFile, "utf8")).statusLine.refreshInterval).toBe(2);
   });
 
   it("wraps an existing status line and restores it on uninstall", async () => {
@@ -214,7 +255,7 @@ describe("cli statusline", () => {
     };
     expect(await main(["statusline"], io)).toBe(0);
     expect(out[0]).toMatch(
-      /^agy ━━━━━━━━──────── 47%  ·  Incidents and the lesson store  ·  › 3\/5  ·  1m0[5-9]s  ·  0 tok$/,
+      /^agy ━━━━━━━━──────── 47%  ·  Incidents and the lesson store  ·  › 3\/5  ·  1m0[5-9]s  ·  0 tok\n\s$/,
     );
   });
   it("init does not touch Claude settings when no home is known", async () => {
