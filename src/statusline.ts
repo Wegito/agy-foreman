@@ -221,7 +221,11 @@ export function renderStatusLine(
     const activity = [phase];
     if (p.phase === "run") {
       if (p.toolSteps > 0) activity.push(`${p.toolSteps} tool calls`);
-      if (p.currentFile) activity.push(truncate(p.currentFile, 36));
+      if (p.currentFile) {
+        // Files outside the worktree (agy's own state) stay absolute: show just the name.
+        const outside = /^([A-Za-z]:)?[\\/]/.test(p.currentFile);
+        activity.push(truncate(outside ? path.basename(p.currentFile) : p.currentFile, 36));
+      }
     }
     segments.push(
       seg(
