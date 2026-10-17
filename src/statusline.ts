@@ -6,8 +6,6 @@ import { isTerminal, type JobRecord } from "./jobs/store.js";
 import { runCommand } from "./pipeline/exec.js";
 import type { QuotaSnapshot, QuotaWindow } from "./usage-quota.js";
 
-/** Finished jobs stay visible in the status line for this long. */
-export const RECENT_MS = 15 * 60_000;
 const BAR_CELLS = 16;
 
 const ansi = (code: string, s: string, color: boolean) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -104,17 +102,6 @@ function bar(percent: number, color: boolean): string {
   );
 }
 
-const STATE_ICON: Record<string, [string, string]> = {
-  passed: ["✓", "32"],
-  failed: ["✗", "31"],
-  guard_violation: ["⛔", "31"],
-  quota: ["⏸", "33"],
-  refused: ["–", "33"],
-  timeout: ["⌛", "33"],
-  cancelled: ["–", "2"],
-  error: ["!", "31"],
-};
-
 /** Start → end of a plan's jobs; ends at the last job's finish, counts only while one runs. */
 export function planSpan(jobs: JobRecord[], j: JobRecord, now: Date): number | undefined {
   if (!j.plan) return undefined;
@@ -129,8 +116,7 @@ export function planSpan(jobs: JobRecord[], j: JobRecord, now: Date): number | u
 /**
  * One status-line row. Running: label, thin bar, %, plan step + title, current checklist task
  * (or phase), elapsed time, job tokens, plan time + tokens, Gemini quota. No time estimate.
- * Finished within RECENT_MS: outcome, how long it took (fixed), tokens, plan totals, quota.
- * Idle: just the quota (or "" without one). Fits `columns`, dropping the least important parts.
+ * Nothing running: "" (the line disappears). Fits `columns`, dropping the least important parts.
  */
 export function renderStatusLine(
   jobs: JobRecord[],
@@ -218,32 +204,8 @@ export function renderStatusLine(
     return fit(segments, columns, sep, sepPlain);
   }
 
-  const last = jobs
-    .filter((j) => now.getTime() - Date.parse(j.updatedAt) <= RECENT_MS)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-  if (!last) {
-    const q = quotaSegs();
-    return q.length ? fit([label, ...q], columns, sep, sepPlain) : "";
-  }
-  const [icon, code] = STATE_ICON[last.state] ?? ["•", "2"];
-  const took = formatElapsed(Date.parse(last.updatedAt) - Date.parse(last.createdAt));
-  const used = last.envelope?.usage?.totalTokens ?? last.progress.tokens;
-  return fit(
-    [
-      seg(
-        `agy ${icon} ${last.state}`,
-        `${label.text} ${ansi(code, `${icon} ${last.state}`, color)}`,
-        100,
-      ),
-      titleSeg(last, 44),
-      seg(`took ${took}`, dim(`took ${took}`), 60),
-      ...tokensSegs(last, used),
-      ...quotaSegs(),
-    ],
-    columns,
-    sep,
-    sepPlain,
-  );
+  // Nothing running: no status line at all (it appears only while agy works).
+  return "";
 }
 
 /** Reads the newest job records (ids start with a time component, so name order ≈ age). */
@@ -281,6 +243,9 @@ export interface StatusLineSetting {
  * idle (exactly when a job runs), so a timer is needed for the bar and elapsed time to move.
  */
 export const REFRESH_INTERVAL_SEC = 2;
+
+/** One column of padding lines our first character up with Claude Code's footer badges (⏵⏵). */
+export const STATUS_PADDING = 1;
 
 export function claudeSettingsPath(env: NodeJS.ProcessEnv): string {
   if (env.AGYO_CLAUDE_SETTINGS) return env.AGYO_CLAUDE_SETTINGS;
@@ -334,20 +299,29 @@ export async function installStatusLine(o: {
   const current = settings.statusLine as StatusLineSetting | undefined;
   if (isOurs(current)) {
     const wanted = statusLineCommand(o.entry);
-    if (current?.refreshInterval === REFRESH_INTERVAL_SEC && current.command === wanted) {
+    if (
+      current?.refreshInterval === REFRESH_INTERVAL_SEC &&
+      current.command === wanted &&
+      current.padding === STATUS_PADDING
+    ) {
       return { state: "already_installed", settings: o.settingsFile };
     }
     // Upgrade an older install (no refresh timer, or the heavy index.js command).
     await writeJsonAtomic(o.settingsFile, {
       ...settings,
-      statusLine: { ...current, command: wanted, refreshInterval: REFRESH_INTERVAL_SEC },
+      statusLine: {
+        ...current,
+        command: wanted,
+        padding: STATUS_PADDING,
+        refreshInterval: REFRESH_INTERVAL_SEC,
+      },
     });
     return { state: "installed", settings: o.settingsFile };
   }
   const ours: StatusLineSetting = {
     type: "command",
     command: statusLineCommand(o.entry),
-    padding: 0,
+    padding: STATUS_PADDING,
     refreshInterval: REFRESH_INTERVAL_SEC,
   };
   if (current?.command) {

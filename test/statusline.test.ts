@@ -98,12 +98,10 @@ describe("renderStatusLine", () => {
       ["agy", "queued", "Incidents and the lesson store"].join(S),
     );
   });
-  it("shows a recently finished job, then nothing", () => {
+  it("disappears as soon as nothing runs", () => {
     const done = job({ id: "t-a", state: "passed", updatedAt: "2026-10-17T14:08:00Z" });
-    expect(renderStatusLine([done], NOW, { color: false })).toBe(
-      ["agy ✓ passed", "Incidents and the lesson store", "took 2m12s", "0 tok"].join(S),
-    );
-    expect(renderStatusLine([done], new Date("2026-10-17T15:00:00Z"), { color: false })).toBe("");
+    expect(renderStatusLine([done], NOW, { color: false })).toBe("");
+    expect(renderStatusLine([], NOW, { color: false })).toBe("");
   });
   it("uses ANSI colors by default and truncates long titles", () => {
     expect(renderStatusLine([job({ id: "t-a" })], NOW)).toContain("[");
@@ -136,14 +134,15 @@ describe("quota and plan timer", () => {
     weekly: { remaining: 12, resetAt: "" },
     fetchedAt: "",
   };
-  it("shows 5h and 7d remaining, colored by level, and alone when idle", () => {
-    expect(renderStatusLine([], NOW, { color: false, quota })).toBe(
-      ["agy", "5h 71% 7d 12%"].join(S),
-    );
-    const colored = renderStatusLine([], NOW, { quota });
+  it("shows 5h and 7d remaining while a job runs, colored by level, and nothing when idle", () => {
+    const running = job({ id: "t-a" });
+    expect(
+      renderStatusLine([running], NOW, { color: false, quota }).endsWith(`${S}5h 71% 7d 12%`),
+    ).toBe(true);
+    expect(renderStatusLine([], NOW, { color: false, quota })).toBe("");
+    const colored = renderStatusLine([running], NOW, { quota });
     expect(colored).toContain("[32m71%");
     expect(colored).toContain("[31m12%");
-    expect(renderStatusLine([], NOW, { color: false })).toBe("");
   });
   it("stops the plan timer at the last job's end once nothing runs", () => {
     const a = job({
@@ -200,7 +199,7 @@ describe("install / uninstall", () => {
     expect(s.statusLine).toEqual({
       type: "command",
       command: 'node "C:/x/agy-orchestrator/dist/statusline.js"',
-      padding: 0,
+      padding: 1,
       refreshInterval: 2,
     });
     expect(await installStatusLine({ ...f, entry })).toMatchObject({ state: "already_installed" });

@@ -254,7 +254,12 @@ export async function main(argv: string[], io: Io): Promise<number> {
       cwd: io.cwd,
       env: io.env,
       approverFor: (gate) =>
-        gate === "client" ? new ClientModeApprover() : new ElicitationApprover(server),
+        gate === "client"
+          ? new ClientModeApprover()
+          : new ElicitationApprover(
+              server,
+              path.join(stateDir({ env: io.env }), "approvals.jsonl"),
+            ),
     });
     server = createServer(runtime.manager, {
       defaultRepoRoot: () => io.cwd,

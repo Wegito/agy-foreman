@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
@@ -23,8 +25,15 @@ export const TOOL_NAMES: readonly ["agy_status", "agy_start", "agy_get", "agy_ac
   "agy_act",
 ] as const;
 
+/** Answers faster than this can't come from a person reading the card (e.g. client auto mode). */
+export const HUMAN_MIN_MS = 700;
+
 export class ElicitationApprover implements Approver {
-  constructor(private server: McpServer) {}
+  /** @param logFile JSONL log of every card: what was asked, the answer, and how fast it came. */
+  constructor(
+    private server: McpServer,
+    private logFile?: string,
+  ) {}
 
   async promote(c: PromoteCard): Promise<boolean> {
     if (!this.server.server.getClientCapabilities()?.elicitation) {
@@ -50,6 +59,7 @@ export class ElicitationApprover implements Approver {
    * "decision not set" for a required enum field).
    */
   private async confirm(message: string): Promise<boolean> {
+    const started = Date.now();
     const res = await this.server.server.elicitInput({
       mode: "form",
       message: `${message}\n\nAccept to approve, Decline to deny.`,
@@ -60,10 +70,29 @@ export class ElicitationApprover implements Approver {
         },
       },
     });
-    return (
+    const approved =
       res.action === "accept" &&
-      (res.content as { approve?: boolean } | undefined)?.approve !== false
-    );
+      (res.content as { approve?: boolean } | undefined)?.approve !== false;
+    const ms = Date.now() - started;
+    if (this.logFile) {
+      try {
+        mkdirSync(path.dirname(this.logFile), { recursive: true });
+        appendFileSync(
+          this.logFile,
+          JSON.stringify({
+            at: new Date(started).toISOString(),
+            card: message.split("\n")[0].slice(0, 120),
+            action: res.action,
+            approved,
+            ms,
+            autoAnsweredSuspected: ms < HUMAN_MIN_MS,
+          }) + "\n",
+        );
+      } catch {
+        // logging must never break approval
+      }
+    }
+    return approved;
   }
 
   async task(c: TaskCard): Promise<boolean> {
