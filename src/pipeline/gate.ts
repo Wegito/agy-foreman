@@ -1,0 +1,262 @@
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+export interface GatePolicy {
+  mode: "implement" | "explore";
+  worktree: string; // absolute
+  readOnlyDirs: string[]; // absolute, readable but never writable
+  protectedGlobs: string[]; // posix globs relative to worktree
+  allowedCommands: string[]; // full command prefixes, e.g. "npm test", "npx vitest run"
+  unknownCommands: "deny" | "allow" | "ask_user";
+  allowedMcp: string[]; // "server/tool" or "server/*"
+  web: boolean;
+}
+
+export interface GateDecision {
+  decision: "auto_approve" | "deny";
+  reason?: string;
+}
+
+export interface ToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export const HOOK_COMMAND = "node agyo-hook.mjs";
+
+export function globToRegExp(glob: string): RegExp {
+  const g = glob.replace(/\\/g, "/");
+  let re = "";
+  let i = 0;
+  while (i < g.length) {
+    if (g.slice(i, i + 3) === "/**") {
+      re += "(?:/.*)?";
+      i += 3;
+    } else if (g.slice(i, i + 3) === "**/") {
+      re += "(?:.+/|^)";
+      i += 3;
+    } else if (g.slice(i, i + 2) === "**") {
+      re += ".*";
+      i += 2;
+    } else if (g[i] === "*") {
+      re += "[^/]*";
+      i += 1;
+    } else if (g[i] === "?") {
+      re += "[^/]";
+      i += 1;
+    } else if (/[.+^$()[\]{}|\\]/.test(g[i])) {
+      re += "\\" + g[i];
+      i += 1;
+    } else {
+      re += g[i];
+      i += 1;
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isInside(root: string, target: string): boolean {
+  const r = process.platform === "win32" ? path.resolve(root).toLowerCase() : path.resolve(root);
+  const t =
+    process.platform === "win32" ? path.resolve(target).toLowerCase() : path.resolve(target);
+  return t === r || t.startsWith(r + (r.endsWith(path.sep) ? "" : path.sep));
+}
+
+function resolveTarget(worktree: string, targetPath: string): string {
+  if (path.isAbsolute(targetPath)) {
+    return path.resolve(targetPath);
+  }
+  return path.resolve(worktree, targetPath);
+}
+
+function getRelPosix(worktree: string, resolvedPath: string): string {
+  const rel = path.relative(worktree, resolvedPath);
+  return rel.split(path.sep).join("/");
+}
+
+export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
+  const name = call.name;
+  const args = call.args ?? {};
+
+  // 2. Writes
+  if (
+    name === "write_to_file" ||
+    name === "replace_file_content" ||
+    name === "multi_replace_file_content"
+  ) {
+    if (policy.mode === "explore") {
+      return { decision: "deny", reason: "Writes are not allowed in explore mode." };
+    }
+    const targetFile = args.TargetFile;
+    if (typeof targetFile !== "string" || !targetFile.trim()) {
+      return { decision: "deny", reason: "TargetFile is required." };
+    }
+    const resolved = resolveTarget(policy.worktree, targetFile);
+    if (!isInside(policy.worktree, resolved)) {
+      return { decision: "deny", reason: "Writes outside the worktree are not allowed." };
+    }
+
+    const rel = getRelPosix(policy.worktree, resolved);
+    const relNorm = rel.toLowerCase();
+
+    if (relNorm === ".agy-task/progress.md") {
+      // Allowed specifically
+    } else if (/^(\.git|\.agents|\.agy-task)(\/|$)/i.test(relNorm)) {
+      return {
+        decision: "deny",
+        reason: `Writing to internal directory (${rel}) is not allowed.`,
+      };
+    }
+
+    for (const glob of policy.protectedGlobs) {
+      if (globToRegExp(glob).test(rel)) {
+        return {
+          decision: "deny",
+          reason: `Target file matches protected pattern: ${glob}`,
+        };
+      }
+    }
+
+    return { decision: "auto_approve" };
+  }
+
+  // 3. Reads
+  if (
+    name === "view_file" ||
+    name === "list_dir" ||
+    name === "find_by_name" ||
+    name === "grep_search"
+  ) {
+    const p = args.AbsolutePath ?? args.DirectoryPath ?? args.SearchDirectory ?? args.SearchPath;
+    if (p === undefined || p === null || String(p).trim() === "") {
+      return { decision: "auto_approve" };
+    }
+    const resolved = resolveTarget(policy.worktree, String(p));
+    const insideWorktree = isInside(policy.worktree, resolved);
+    const insideReadOnly = policy.readOnlyDirs.some((dir) => isInside(dir, resolved));
+    if (insideWorktree || insideReadOnly) {
+      return { decision: "auto_approve" };
+    }
+    return { decision: "deny", reason: "Reading outside the worktree is not allowed." };
+  }
+
+  // 4. run_command
+  if (name === "run_command") {
+    const cmdLine = String(args.CommandLine ?? "").trim();
+    const danger =
+      /\bgit\s+(push|commit|reset|checkout|switch|rebase|merge|remote|config|clean|stash|worktree|branch|tag)\b|\b(curl|wget|irm|iwr|Invoke-WebRequest|Invoke-RestMethod|iex|Invoke-Expression)\b|\brm\s+-rf\b|\bRemove-Item\b.*?\b-Recurse\b|\brmdir\s+\/s\b|\bdel\s+\/s\b|\bshutdown\b|\bformat\b/i;
+
+    if (danger.test(cmdLine)) {
+      return { decision: "deny", reason: "Dangerous command not allowed." };
+    }
+
+    const segments = cmdLine
+      .split(/&&|\|\||;|\|/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const readOnlyGit = /^git\s+(status|diff|log|show|ls-files|rev-parse|grep|blame)\b/i;
+    const listings =
+      /^(ls|dir|cat|type|echo|pwd|Get-ChildItem|Get-Content|Test-Path|Select-String)\b/i;
+
+    for (const seg of segments) {
+      if (policy.mode === "explore") {
+        const isOk = readOnlyGit.test(seg) || listings.test(seg);
+        if (!isOk) {
+          return { decision: "deny", reason: "Command not allowed in explore mode." };
+        }
+      } else {
+        const isAllowedPrefix = policy.allowedCommands.some((cmd) =>
+          new RegExp(`^${escapeRegex(cmd)}\\b`, "i").test(seg),
+        );
+        const isOk = isAllowedPrefix || readOnlyGit.test(seg) || listings.test(seg);
+        if (!isOk) {
+          if (policy.unknownCommands === "allow") {
+            continue;
+          }
+          return {
+            decision: "deny",
+            reason: `Command not on allowlist: ${seg}`,
+          };
+        }
+      }
+    }
+
+    return { decision: "auto_approve" };
+  }
+
+  // 5. call_mcp_tool
+  if (name === "call_mcp_tool") {
+    const server = String(args.ServerName ?? "");
+    const tool = String(args.ToolName ?? "");
+    const allowed =
+      policy.allowedMcp.includes(`${server}/${tool}`) || policy.allowedMcp.includes(`${server}/*`);
+    if (allowed) {
+      return { decision: "auto_approve" };
+    }
+    return { decision: "deny", reason: `MCP tool ${server}/${tool} not allowed` };
+  }
+
+  // 6. web
+  if (name === "search_web" || name === "read_url_content") {
+    if (policy.web) {
+      return { decision: "auto_approve" };
+    }
+    return { decision: "deny", reason: "Web access is disabled." };
+  }
+
+  // 7. questions
+  if (name === "ask_question" || name === "ask_permission") {
+    return {
+      decision: "deny",
+      reason:
+        "No human is available in this run. Decide using the brief, or stop and report what you need.",
+    };
+  }
+
+  // 8. Anything else
+  return { decision: "deny", reason: `Tool ${name} is not allowed.` };
+}
+
+export async function installGate(
+  worktree: string,
+  policy: GatePolicy,
+  hookBundlePath: string,
+): Promise<void> {
+  const agentsDir = path.join(worktree, ".agents");
+  mkdirSync(agentsDir, { recursive: true });
+
+  copyFileSync(hookBundlePath, path.join(agentsDir, "agyo-hook.mjs"));
+  writeFileSync(path.join(agentsDir, "agyo-policy.json"), JSON.stringify(policy, null, 2), "utf8");
+
+  const hooksPath = path.join(agentsDir, "hooks.json");
+  let existingHooks: Record<string, unknown> = {};
+  if (existsSync(hooksPath)) {
+    try {
+      existingHooks = JSON.parse(readFileSync(hooksPath, "utf8"));
+    } catch {
+      existingHooks = {};
+    }
+  }
+
+  existingHooks["agyo-gate"] = {
+    PreToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: HOOK_COMMAND,
+            timeout: 60,
+          },
+        ],
+      },
+    ],
+  };
+
+  writeFileSync(hooksPath, JSON.stringify(existingHooks, null, 2), "utf8");
+}

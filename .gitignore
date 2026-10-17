@@ -5,3 +5,4 @@ dist/
 package/
 docs/*
 !docs/multi-client-support.md
+test/.tmp/
