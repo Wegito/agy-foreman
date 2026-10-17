@@ -73,6 +73,13 @@ export async function openSpecContext(planPath: string): Promise<string> {
   return out ? `\n\n## Context: OpenSpec change "${name}"${out}` : "";
 }
 
+/** How many steps the plan has: `### Task N:` or `## N.` headings (never `## N.M`). */
+export function countPlanSteps(markdown: string): number {
+  const steps = new Set<string>();
+  for (const m of markdown.matchAll(/^#{2,4}\s+(?:Task\s+)?(\d+)[:.](?:\s|$)/gm)) steps.add(m[1]);
+  return steps.size;
+}
+
 export function parsePlanStep(markdown: string, step: number): PlanStep {
   const lines = markdown.split(/\r?\n/);
   // `### Task 3: Title` or `## 3. Title`; never `## 3.1 Title`.

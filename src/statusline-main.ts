@@ -1,11 +1,25 @@
 // Lightweight entry for Claude Code's status line (dist/statusline.js). Claude Code runs it every
 // couple of seconds, so it must not load the MCP server: only job files, the quota cache and render.
 // It never starts processes (the MCP server keeps the quota cache fresh).
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { jobsDir, stateDir } from "./paths.js";
-import { previousStatusLine, recentJobs, renderStatusLine } from "./statusline.js";
+import { countPlanSteps } from "./jobs/plan.js";
+import type { JobRecord } from "./jobs/store.js";
+import { previousStatusLine, recentJobs, renderStatusLine, shownJob } from "./statusline.js";
 import { quotaFile, readQuotaCache } from "./usage-quota.js";
+
+/** Steps in the shown job's plan file; undefined without a plan or when the file is unreadable. */
+async function planStepCount(j: JobRecord | undefined): Promise<number | undefined> {
+  if (!j?.plan) return undefined;
+  try {
+    const file = path.resolve(j.repoRoot, j.plan.file);
+    return countPlanSteps(await readFile(file, "utf8")) || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The status line text: an optional wrapped previous status line, our row, and a blank spacer row
@@ -23,10 +37,13 @@ export async function statusLineText(o: {
     o.stdin,
     o.cwd,
   );
-  const ours = renderStatusLine(await recentJobs(jobsDir({ env: o.env })), now, {
+  const jobs = await recentJobs(jobsDir({ env: o.env }));
+  const planSteps = await planStepCount(shownJob(jobs));
+  const ours = renderStatusLine(jobs, now, {
     color: o.env.NO_COLOR === undefined,
     quota: readQuotaCache(quotaFile(o.env)),
     ...(Number(o.env.COLUMNS) > 0 ? { columns: Number(o.env.COLUMNS) } : {}),
+    ...(planSteps ? { planSteps } : {}),
   });
   const row = [prev, ours].filter(Boolean).join("  │  ");
   return row ? `${row}\n ` : "";

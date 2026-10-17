@@ -31,20 +31,16 @@ const job = (o: Partial<JobRecord> & { id: string }): JobRecord => ({
 
 describe("renderStatusLine", () => {
   const S = "  ·  ";
-  it("shows bar, percent, title, current task count, elapsed time and tokens, and no estimate", () => {
+  it("shows title, phase and the job's time and tokens without a plan, and no percentage", () => {
     const line = renderStatusLine([job({ id: "t-a" })], NOW, { color: false });
     expect(line).toBe(
-      [
-        "agy ━━━━━━━━──────── 47%",
-        "Incidents and the lesson store",
-        "› 3/5",
-        "4m12s",
-        "0 tok",
-      ].join(S),
+      ["agy", "Incidents and the lesson store", "› running", "4m12s · 0 tok"].join(S),
     );
-    expect(line).not.toMatch(/ETA|remaining/i);
+    expect(line).not.toMatch(/%|ETA|remaining/i);
   });
-  it("shows the plan step, clean title, current task, and job + plan tokens", () => {
+  // Regression (found live): the in-run % sat at 10 and jumped to 85, because Gemini ticks its
+  // checklist only at the end. The bar now counts finished plan steps instead.
+  it("shows passed plan steps, live activity, and only the plan's time and tokens", () => {
     const running = job({
       id: "t-b",
       title: "Learning loop in `JobManager` and the **MCP** lesson action",
@@ -56,6 +52,8 @@ describe("renderStatusLine", () => {
         checklistDone: 2,
         checklistTotal: 5,
         tokens: 312_400,
+        toolSteps: 12,
+        currentFile: "src/jobs/manager.ts",
         currentStep: "Implement src/jobs/manager.ts",
       },
     });
@@ -66,14 +64,12 @@ describe("renderStatusLine", () => {
       updatedAt: "2026-10-17T13:00:00Z",
       envelope: { usage: { totalTokens: 331_658 } } as never,
     });
-    expect(renderStatusLine([earlier, running], NOW, { color: false })).toBe(
+    expect(renderStatusLine([earlier, running], NOW, { color: false, planSteps: 4 })).toBe(
       [
-        "agy ━━━━━━━━──────── 47%",
+        "agy ━━━━──────────── 1/4 steps",
         "#2 Learning loop in JobManager and the MCP…",
-        "› 3/5 Implement src/jobs/manager.ts",
-        "4m12s",
-        "312k tok",
-        "plan 4m12s · 644k",
+        "› running · 12 tool calls · src/jobs/manager.ts",
+        "plan 4m12s · 644k tok",
       ].join(S),
     );
   });
@@ -87,7 +83,6 @@ describe("renderStatusLine", () => {
       columns: 60,
     });
     expect(line.length).toBeLessThanOrEqual(60);
-    expect(line).toContain("47%");
     expect(line).toContain("#2");
   });
   it("mentions other active jobs and shows queued ones", () => {
@@ -254,7 +249,7 @@ describe("cli statusline", () => {
     };
     expect(await main(["statusline"], io)).toBe(0);
     expect(out[0]).toMatch(
-      /^agy ━━━━━━━━──────── 47%  ·  Incidents and the lesson store  ·  › 3\/5  ·  1m0[5-9]s  ·  0 tok\n\s$/,
+      /^agy  ·  Incidents and the lesson store  ·  › running  ·  1m0[5-9]s · 0 tok\n\s$/,
     );
   });
   it("init does not touch Claude settings when no home is known", async () => {

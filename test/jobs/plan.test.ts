@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openSpecContext, parsePlanStep, planTitle } from "../../src/jobs/plan.js";
+import { countPlanSteps, openSpecContext, parsePlanStep, planTitle } from "../../src/jobs/plan.js";
 
 const PLAN = [
   "# Demo Implementation Plan",
@@ -114,5 +114,13 @@ describe("OpenSpec changes", () => {
     expect(ctx).toContain("### openspec/changes/add-amp/proposal.md\n\nWhy: support Amp.");
     expect(ctx).toContain("### openspec/changes/add-amp/specs/cli/spec.md");
     expect(await openSpecContext("docs/plan.md")).toBe("");
+  });
+});
+
+describe("countPlanSteps", () => {
+  it("counts Superpowers and OpenSpec steps but not sub-items", () => {
+    expect(countPlanSteps(PLAN)).toBe(2);
+    expect(countPlanSteps(TASKS)).toBe(3);
+    expect(countPlanSteps("# t\n\n## 1.1 sub\n")).toBe(0);
   });
 });

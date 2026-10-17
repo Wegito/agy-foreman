@@ -74,7 +74,6 @@ function fit(segments: Segment[], columns: number, sep: string, sepPlain: string
 function planTokens(jobs: JobRecord[], j: JobRecord): number | undefined {
   if (!j.plan) return undefined;
   const same = jobs.filter((x) => x.plan?.file === j.plan?.file);
-  if (same.length < 2) return undefined;
   return same.reduce(
     (sum, x) => sum + (x.envelope?.usage?.totalTokens ?? x.progress.tokens ?? 0),
     0,
@@ -95,18 +94,39 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + "…";
 }
 
-function bar(percent: number, color: boolean): string {
-  const filled = Math.round((Math.min(100, Math.max(0, percent)) / 100) * BAR_CELLS);
+function bar(done: number, total: number, color: boolean): string {
+  const filled = Math.round((Math.min(total, Math.max(0, done)) / total) * BAR_CELLS);
   return (
     ansi("32", "━".repeat(filled), color) + ansi("2;37", "─".repeat(BAR_CELLS - filled), color)
   );
+}
+
+function activeJobs(jobs: JobRecord[]): JobRecord[] {
+  return jobs
+    .filter((j) => !isTerminal(j.state))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** The job the status line shows: the oldest running one, else the oldest queued one. */
+export function shownJob(jobs: JobRecord[]): JobRecord | undefined {
+  const active = activeJobs(jobs);
+  return active.find((a) => a.state === "running") ?? active[0];
+}
+
+/** Distinct steps of this plan whose job passed. */
+export function planStepsDone(jobs: JobRecord[], j: JobRecord): number {
+  const done = new Set(
+    jobs
+      .filter((x) => x.plan?.file === j.plan?.file && x.state === "passed")
+      .map((x) => x.plan!.step),
+  );
+  return done.size;
 }
 
 /** Start → end of a plan's jobs; ends at the last job's finish, counts only while one runs. */
 export function planSpan(jobs: JobRecord[], j: JobRecord, now: Date): number | undefined {
   if (!j.plan) return undefined;
   const same = jobs.filter((x) => x.plan?.file === j.plan?.file);
-  if (same.length < 2) return undefined;
   const start = Math.min(...same.map((x) => Date.parse(x.createdAt)));
   const running = same.some((x) => !isTerminal(x.state));
   const end = running ? now.getTime() : Math.max(...same.map((x) => Date.parse(x.updatedAt)));
@@ -114,14 +134,22 @@ export function planSpan(jobs: JobRecord[], j: JobRecord, now: Date): number | u
 }
 
 /**
- * One status-line row. Running: label, thin bar, %, plan step + title, current checklist task
- * (or phase), elapsed time, job tokens, plan time + tokens, Gemini quota. No time estimate.
- * Nothing running: "" (the line disappears). Fits `columns`, dropping the least important parts.
+ * One status-line row. Running: label, plan bar (steps passed / plan steps), plan step + title,
+ * live activity (phase, tool calls, current file), time + tokens of the whole plan (of the job
+ * when it has no plan), Gemini quota. No percentage: Gemini ticks its checklist only at the end,
+ * so there is no honest in-run percentage. Nothing running: "" (the line disappears).
+ * Fits `columns`, dropping the least important parts.
  */
 export function renderStatusLine(
   jobs: JobRecord[],
   now: Date,
-  o: { color?: boolean; columns?: number; quota?: QuotaSnapshot } = {},
+  o: {
+    color?: boolean;
+    columns?: number;
+    quota?: QuotaSnapshot;
+    /** Number of steps in the shown job's plan file (from countPlanSteps). */
+    planSteps?: number;
+  } = {},
 ): string {
   const color = o.color ?? true;
   const columns = Math.max(40, o.columns ?? 200);
@@ -134,16 +162,16 @@ export function renderStatusLine(
     const t = truncate(cleanTitle(j.title), Math.max(1, max - num.length));
     return { ...seg(num + t, dim(num) + ansi("1", t, color), 80), shrink: (m) => titleSeg(j, m) };
   };
-  const tokensSegs = (j: JobRecord, used: number): Segment[] => {
-    const own = `${formatTokens(used)} tok`;
-    const out = [seg(own, dim(own), 40)];
+  /** Time and tokens of the whole plan, or of the job when it has no plan. */
+  const totalsSeg = (j: JobRecord): Segment => {
     const span = planSpan(jobs, j, now);
     const total = planTokens(jobs, j);
     if (span !== undefined && total !== undefined) {
-      const plain = `plan ${formatElapsed(span)} · ${formatTokens(total)}`;
-      out.push(seg(plain, dim(plain), 20));
+      const plain = `plan ${formatElapsed(span)} · ${formatTokens(total)} tok`;
+      return seg(plain, plain, 60);
     }
-    return out;
+    const plain = `${formatElapsed(now.getTime() - Date.parse(j.createdAt))} · ${formatTokens(j.progress.tokens)} tok`;
+    return seg(plain, plain, 60);
   };
   const quotaSegs = (): Segment[] => {
     const q = o.quota;
@@ -162,12 +190,10 @@ export function renderStatusLine(
     return [seg(parts.map((x) => x.plain).join(" "), parts.map((x) => x.text).join(" "), 50)];
   };
 
-  const active = jobs
-    .filter((j) => !isTerminal(j.state))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const active = activeJobs(jobs);
+  const j = shownJob(jobs);
 
-  if (active.length > 0) {
-    const j = active.find((a) => a.state === "running") ?? active[0];
+  if (j) {
     const others = active.length - 1;
     if (j.state === "queued") {
       return fit(
@@ -178,28 +204,33 @@ export function renderStatusLine(
       );
     }
     const p = j.progress;
-    const head = `${bar(p.percent, color)} ${ansi("1", `${String(p.percent).padStart(2)}%`, color)}`;
-    const headPlain = `${"━".repeat(BAR_CELLS)} ${String(p.percent).padStart(2)}%`;
-    const segments: Segment[] = [
-      seg(`agy ${headPlain}`, `${label.text} ${head}`, 100),
-      titleSeg(j, 44),
-    ];
-    if (p.phase === "run" && p.checklistTotal > 0) {
-      const count = `${Math.min(p.checklistDone + 1, p.checklistTotal)}/${p.checklistTotal}`;
-      const task = p.currentStep ? truncate(cleanTitle(p.currentStep), 40) : "";
-      segments.push(
-        seg(
-          `› ${count}${task ? " " + task : ""}`,
-          `${dim("›")} ${ansi("36", count, color)}${task ? " " + task : ""}`,
-          70,
-        ),
+    const steps = j.plan && o.planSteps && o.planSteps > 0 ? o.planSteps : undefined;
+    let first = label;
+    if (steps !== undefined) {
+      const done = Math.min(planStepsDone(jobs, j), steps);
+      const count = `${done}/${steps} steps`;
+      first = seg(
+        `agy ${"━".repeat(BAR_CELLS)} ${count}`,
+        `${label.text} ${bar(done, steps, color)} ${ansi("1", count, color)}`,
+        100,
       );
-    } else {
-      const phase = PHASE_LABEL[p.phase] ?? p.phase;
-      segments.push(seg(`› ${phase}`, `${dim("›")} ${ansi("36", phase, color)}`, 70));
     }
-    const elapsed = formatElapsed(now.getTime() - Date.parse(j.createdAt));
-    segments.push(seg(elapsed, elapsed, 60), ...tokensSegs(j, p.tokens), ...quotaSegs());
+    const segments: Segment[] = [first, titleSeg(j, 44)];
+    // Live activity: what is known for sure right now, not an estimate.
+    const phase = PHASE_LABEL[p.phase] ?? p.phase;
+    const activity = [phase];
+    if (p.phase === "run") {
+      if (p.toolSteps > 0) activity.push(`${p.toolSteps} tool calls`);
+      if (p.currentFile) activity.push(truncate(p.currentFile, 36));
+    }
+    segments.push(
+      seg(
+        `› ${activity.join(" · ")}`,
+        `${dim("›")} ${ansi("36", phase, color)}${activity.length > 1 ? " · " + activity.slice(1).join(" · ") : ""}`,
+        70,
+      ),
+    );
+    segments.push(totalsSeg(j), ...quotaSegs());
     if (others > 0) segments.push(seg(`+${others} more`, dim(`+${others} more`), 10));
     return fit(segments, columns, sep, sepPlain);
   }
