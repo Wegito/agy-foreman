@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { StreamEvent } from "../agy/types.js";
 import { progressFraction } from "../pipeline/brief.js";
+import { toolSubject } from "../pipeline/toolcall-record.js";
 import type { Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
 import { repoHash } from "../pipeline/worktree.js";
 import { classifyIncident } from "./incidents.js";
@@ -81,20 +82,17 @@ export async function executeJob(
         changed = true;
       }
       const params = ev.toolParams;
-      if (params && typeof params === "object") {
-        const target =
-          params.TargetFile ?? params.targetFile ?? params.AbsolutePath ?? params.absolutePath;
-        if (typeof target === "string") {
-          let rel = target;
-          if (path.isAbsolute(rel)) {
-            const r = path.relative(worktreePath, rel);
-            if (!r.startsWith("..") && !path.isAbsolute(r)) {
-              rel = r;
-            }
+      const target = toolSubject(params);
+      if (typeof target === "string") {
+        let rel = target;
+        if (path.isAbsolute(rel)) {
+          const r = path.relative(worktreePath, rel);
+          if (!r.startsWith("..") && !path.isAbsolute(r)) {
+            rel = r;
           }
-          record.progress.currentFile = rel.replace(/\\/g, "/");
-          changed = true;
         }
+        record.progress.currentFile = rel.replace(/\\/g, "/");
+        changed = true;
       }
       if (ev.usage?.totalTokens) {
         record.progress.tokens = ev.usage.totalTokens;

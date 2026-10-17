@@ -1,5 +1,8 @@
-import { appendFileSync, readFileSync } from "node:fs";
-import { decide, type GatePolicy } from "./gate.js";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { decide } from "./gate.js";
+import { appendReview, readPolicy, toolSubject, type ReviewEntry } from "./toolcall-record.js";
 
 function main() {
   try {
@@ -9,15 +12,14 @@ function main() {
     const name = String(toolCall.name ?? "");
     const args = (toolCall.args ?? {}) as Record<string, unknown>;
 
-    const policyUrl = new URL("./foreman-policy.json", import.meta.url);
-    const policy = JSON.parse(readFileSync(policyUrl, "utf8")) as GatePolicy;
+    const agentsDir = path.dirname(fileURLToPath(import.meta.url));
+    const policy = readPolicy(agentsDir);
 
     const res = decide(policy, { name, args });
 
-    const argVal = args.TargetFile ?? args.CommandLine ?? args.AbsolutePath ?? "";
-    const arg = String(argVal).slice(0, 200);
+    const arg = toolSubject(args) ?? "";
 
-    const logEntry = {
+    const logEntry: ReviewEntry = {
       t: new Date().toISOString(),
       name,
       decision: res.decision,
@@ -25,8 +27,7 @@ function main() {
       arg,
     };
 
-    const reviewUrl = new URL("./foreman-review.jsonl", import.meta.url);
-    appendFileSync(reviewUrl, JSON.stringify(logEntry) + "\n", "utf8");
+    appendReview(agentsDir, logEntry);
 
     process.stdout.write(JSON.stringify(res));
   } catch (err: unknown) {

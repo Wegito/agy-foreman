@@ -1,7 +1,8 @@
 // Shared envelope-building helpers, untrusted output fencing, and review log inspection.
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { readReview } from "./toolcall-record.js";
 import type { AgyUsage, Outcome } from "../agy/types.js";
 import type { Citation, Envelope, JobSpec, JobState, PipelineDeps } from "./index.js";
 import type { VerifyReport } from "./verify.js";
@@ -12,25 +13,15 @@ export function fenceUntrusted(text: string, nonce: string): string {
 }
 
 export function getDeniedCommands(worktreePath: string): string[] {
-  const reviewFile = path.join(worktreePath, ".agents", "foreman-review.jsonl");
-  if (!existsSync(reviewFile)) return [];
-  try {
-    const lines = readFileSync(reviewFile, "utf8").trim().split(/\r?\n/).filter(Boolean);
-    const denied: string[] = [];
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.decision === "deny" && entry.name === "run_command" && entry.arg) {
-          denied.push(String(entry.arg));
-        }
-      } catch {
-        // ignore parse error
-      }
+  const agentsDir = path.join(worktreePath, ".agents");
+  const entries = readReview(agentsDir);
+  const denied: string[] = [];
+  for (const entry of entries) {
+    if (entry.decision === "deny" && entry.name === "run_command" && entry.arg) {
+      denied.push(String(entry.arg));
     }
-    return denied;
-  } catch {
-    return [];
   }
+  return denied;
 }
 
 export function makeUntrustedReport(outcome: Outcome, nonce?: string): string {

@@ -1,5 +1,6 @@
 import type { StreamEvent } from "../agy/types.js";
 import { decide, type GatePolicy } from "./gate.js";
+import { toolSubject } from "./toolcall-record.js";
 
 export function makeGuard(policy: GatePolicy): (ev: StreamEvent) => string | null {
   return (ev: StreamEvent): string | null => {
@@ -11,17 +12,7 @@ export function makeGuard(policy: GatePolicy): (ev: StreamEvent) => string | nul
     if (decision.decision !== "deny") {
       return null;
     }
-    const arg =
-      toolParams.TargetFile ??
-      toolParams.CommandLine ??
-      toolParams.AbsolutePath ??
-      toolParams.DirectoryPath ??
-      toolParams.SearchDirectory ??
-      toolParams.SearchPath ??
-      toolParams.Url ??
-      toolParams.ServerName ??
-      Object.values(toolParams)[0] ??
-      "";
+    const arg = toolSubject(toolParams) ?? "";
     const firstArg = arg ? ` ${arg}` : "";
     return `guard: ${ev.toolName}${firstArg}: ${decision.reason ?? "denied"}`;
   };

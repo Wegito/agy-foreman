@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { writePolicy } from "./toolcall-record.js";
 
 export interface GatePolicy {
   mode: "implement" | "explore";
@@ -299,11 +300,7 @@ export async function installGate(
   mkdirSync(agentsDir, { recursive: true });
 
   copyFileSync(hookBundlePath, path.join(agentsDir, "foreman-hook.mjs"));
-  writeFileSync(
-    path.join(agentsDir, "foreman-policy.json"),
-    JSON.stringify(policy, null, 2),
-    "utf8",
-  );
+  writePolicy(agentsDir, policy);
 
   const hooksPath = path.join(agentsDir, "hooks.json");
   let existingHooks: Record<string, unknown> = {};
