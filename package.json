@@ -1,29 +1,28 @@
 {
-  "name": "agy-bridge",
-  "version": "0.4.2",
-  "description": "MCP bridge that lets Claude Code delegate heavy tasks to the Antigravity CLI (agy) — purpose-built tools, model routing with fallback, and multi-turn session continuity.",
-  "mcpName": "io.github.sshahzaiib/agy-bridge",
+  "name": "agy-orchestrator",
+  "version": "0.0.1",
+  "description": "Verified, approval-gated delegation from Claude Code (or any MCP agent) to Gemini 3.8 Flash via the Antigravity CLI.",
   "type": "module",
   "bin": {
-    "agy-bridge": "dist/index.js"
+    "agy-orchestrator": "dist/index.js"
   },
   "files": [
     "dist",
-    "CLAUDE.md",
-    "SKILL.md",
+    "skills",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "prepare": "husky"
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "mcp",
@@ -33,28 +32,17 @@
     "gemini",
     "delegation"
   ],
-  "author": "Shahzaib (https://github.com/sshahzaiib)",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sshahzaiib/agy-bridge.git"
-  },
+  "author": "Mountaser Halak (https://mountaserhalak.com)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.2",
-    "@commitlint/config-conventional": "^21.0.2",
     "@types/node": "^20.0.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.8",
     "prettier": "^3.8.4",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
-  },
-  "lint-staged": {
-    "*.{ts,js,json,md,yml,yaml}": "prettier --write"
   }
 }

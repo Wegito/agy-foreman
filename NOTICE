@@ -1,0 +1,12 @@
+agy-orchestrator
+Copyright (c) 2026 Mountaser Halak
+
+This project is a fork of agy-bridge (https://github.com/sshahzaiib/agy-bridge),
+Copyright (c) 2026 Shahzaib, MIT License. Files derived from it:
+  src/agy/quota.ts, src/config.ts (rewritten), project toolchain.
+
+Portions are adapted from claude-agy-mcp (https://github.com/PyModel/claude-agy-mcp),
+Copyright (c) 2026 elkaix, MIT License. Files derived from it:
+  src/agy/stream.ts, test/fixtures/fake-agy.mjs.
+
+Not affiliated with Google. "Antigravity" and "Gemini" are trademarks of Google LLC.

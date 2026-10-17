@@ -1,159 +1,191 @@
-<div align="center">
+# agy-foreman
 
-<img src="https://raw.githubusercontent.com/sshahzaiib/agy-bridge/main/assets/banner.svg" alt="agy-bridge — Claude Code delegates heavy tasks to the Antigravity CLI" width="100%">
+Hand plan tasks from Claude Code to Gemini 3.8 Flash through the Antigravity CLI, and merge only what passes your tests.
 
-# agy-bridge
-
-[![CI](https://github.com/sshahzaiib/agy-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/sshahzaiib/agy-bridge/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/agy-bridge)](https://www.npmjs.com/package/agy-bridge)
-[![npm downloads](https://img.shields.io/npm/dm/agy-bridge)](https://www.npmjs.com/package/agy-bridge)
-[![node](https://img.shields.io/node/v/agy-bridge)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/agy-bridge)](LICENSE)
-
-[![Glama score](https://glama.ai/mcp/servers/sshahzaiib/agy-bridge/badges/score.svg)](https://glama.ai/mcp/servers/sshahzaiib/agy-bridge)
-
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/sshahzaiib-agy-bridge-badge.png)](https://mseep.ai/app/sshahzaiib-agy-bridge)
-
-An MCP bridge that lets **Claude Code delegate heavy tasks to the Antigravity CLI (`agy`)** — saving Claude's context window and tokens for what matters.
-
-Claude sends a task → the bridge routes it to the best available model via `agy` → only the answer comes back. Large files, deep git searches, and web lookups never touch Claude's context.
-
-**Listed on**
-
-[![Glama](https://img.shields.io/badge/Glama-agy--bridge-7c3aed)](https://glama.ai/mcp/servers/sshahzaiib/agy-bridge)
-[![MCP Market](https://img.shields.io/badge/MCP%20Market-agy--bridge-0ea5e9)](https://mcpmarket.com/server/agy-bridge)
-[![PulseMCP](https://img.shields.io/badge/PulseMCP-agy--bridge-f43f5e)](https://www.pulsemcp.com/servers/sshahzaiib-agy-bridge)
-[![mcp.so](https://img.shields.io/badge/mcp.so-agy--bridge-22c55e)](https://mcp.so/server/agy-bridge/sshahzaiib)
-[![MCP Servers](https://img.shields.io/badge/MCP%20Servers-agy--bridge-f59e0b)](https://mcpservers.org/servers/sshahzaiib/agy-bridge)
-[![Verified on MseeP](https://img.shields.io/badge/MseeP.ai-verified-2563eb)](https://mseep.ai/app/2f439062-d211-4a6c-b41b-3a603f490a32)
-
-</div>
+[![CI](https://github.com/mountaser/agy-foreman/actions/workflows/ci.yml/badge.svg)](https://github.com/mountaser/agy-foreman/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)
+![Windows, Linux, macOS](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey.svg)
 
 ```
-User → Claude Code → agy-bridge (MCP) → agy CLI → Gemini / Claude / GPT-OSS
-                   ←                  ←          ←
+agy 🟢🟢🟢🟢🟢🟢🔵 6/7 tasks · #7 You shall not pass · › running · 42 tool calls · plan 41m07s
 ```
 
-## Why this over claude-to-agy?
+_The Claude Code status line while Gemini works on the last task of a plan. Each task gets a marker: done, running, failed or not started._
 
-|                 | claude-to-agy               | **agy-bridge**                                                                       |
-| --------------- | --------------------------- | ------------------------------------------------------------------------------------ |
-| Tool surface    | 1 generic `delegate_to_agy` | 6 purpose-built tools — Claude self-routes reliably                                  |
-| Model selection | none (agy default only)     | per-tool routing across all `agy models`, with availability detection and fallback   |
-| Multi-turn      | stateless                   | session continuity — `follow_up` resumes agy conversations without resending context |
-| Output safety   | unbounded                   | configurable truncation cap protects Claude's context                                |
-| Sandbox         | no                          | optional `--sandbox` mode                                                            |
-| Install         | uvx (Python)                | npx (Node) — zero install                                                            |
+agy-foreman lets Claude Code hand tasks from a plan to Gemini 3.8 Flash through Google's `agy` CLI. Gemini works in its own git worktree, the server runs your tests on the result, and only branches that pass get merged.
 
-## Requirements
+It works with plans written by [Superpowers](https://github.com/obra/superpowers) and changes written with [OpenSpec](https://github.com/Fission-AI/OpenSpec), as well as one-off tasks.
 
-- Node.js 18+
-- [Antigravity CLI](https://antigravity.google/docs/cli-getting-started) (`agy`) installed and authenticated
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+> **Status:** v0.1, pre-release. It runs end to end on Windows, Linux and macOS.
 
-## Install
+## Works with your plans
+
+agy-foreman reads the plan file you already have and runs one task per job:
+
+| Plan source                                                        | File                               | A task is                                      |
+| ------------------------------------------------------------------ | ---------------------------------- | ---------------------------------------------- |
+| [Superpowers](https://github.com/obra/superpowers) `writing-plans` | any `.md` plan                     | a `### Task 3: …` section                      |
+| [OpenSpec](https://github.com/Fission-AI/OpenSpec) change          | `openspec/changes/<name>/tasks.md` | a `## 3. …` section with its `- [ ] 3.1` items |
+| none                                                               | none                               | a task description passed to `agy_start`       |
+
+For Superpowers plans, test code blocks in a task become the contract tests, and the `Create:` / `Modify:` file lists become Gemini's checklist. For OpenSpec changes, the open `- [ ]` items do that job, and the change's `proposal.md`, `design.md` and `specs/` are added to Gemini's brief, so it gets the context even when the change folder isn't committed yet.
+
+## Quick start
+
+You need Node 20 or newer, git 2.38 or newer, Claude Code, and the [Antigravity CLI](https://antigravity.google/docs/cli) (`agy`) logged in to your Google account.
 
 ```bash
-# 1. Register the MCP server (user scope = all projects).
-#    add-json bakes in a generous client-side timeout so long analyze_files /
-#    delegate calls don't trip Claude Code's tool-call deadline (see Timeouts).
-claude mcp add-json -s user agy-bridge \
-  '{"command":"npx","args":["-y","agy-bridge"],"timeout":600000}'
-
-# 2. Add delegation rules to your project (or ~/.claude/CLAUDE.md for global)
-curl -o CLAUDE.md https://raw.githubusercontent.com/sshahzaiib/agy-bridge/main/CLAUDE.md
+npm install -g agy-foreman
 ```
 
-> The `"timeout": 600000` (10 min, milliseconds) is the **client-side** tool-call
-> deadline — without it, a cold-start `analyze_files` (~40–50s) or a long
-> `delegate` can hit Claude Code's default and return `timed out waiting for
-response` while the agy run is still going. If your client doesn't honor a
-> per-server `timeout`, set the global env var `MCP_TOOL_TIMEOUT=600000` instead.
-> Details and the agy-side budgets are in [Timeouts and cancellation](#timeouts-and-cancellation).
+Set up a repository you want to use it in:
 
-## Tools
-
-| Tool                 | Use for                                                         | Model routing (first available)                                   |
-| -------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `analyze_files`      | Files >200 lines, >3 files at once, logs, dumps, generated code | Gemini 3.5 Flash (High) → Gemini 3.1 Pro (Low)                    |
-| `deep_search`        | git log/diff/blame archaeology, repo-wide greps                 | Gemini 3.5 Flash (Medium) → (High)                                |
-| `web_lookup`         | Docs, API references, external/current knowledge                | Gemini 3.5 Flash (Medium) → (High)                                |
-| `adversarial_review` | Plan critiques, design and code reviews                         | Gemini 3.1 Pro (High) → Claude Opus 4.6 (Thinking) → Flash (High) |
-| `follow_up`          | Continue a prior session by `session_id` — no context resend    | inherits the session                                              |
-| `delegate`           | Anything else heavy                                             | Gemini 3.5 Flash (High)                                           |
-
-All tools accept optional `cwd` (project root) and `model` (an id or display name from `agy models`; validated, with available models listed on mismatch).
-
-Every response ends with a footer:
-
-```
----
-[agy-bridge] model: Gemini 3.5 Flash (High) | session: 1f0c…-d4 (use follow_up to continue)
+```bash
+cd your-repo
+agy-foreman init           # config + status line
+agy-foreman doctor         # checks node, git, agy login
+agy-foreman install-skill  # teaches Claude to delegate
+claude mcp add agy-foreman -- agy-foreman serve
 ```
 
-### Model routing
+On Windows, register it as `claude mcp add agy-foreman -- cmd /c agy-foreman serve`.
 
-On first use the bridge runs `agy models` (cached for the process lifetime) and picks the first available model in the tool's preference chain. If none is available it falls back to `AGY_DEFAULT_MODEL`, and finally to agy's own default. agy silently ignores unknown `--model` values, so the bridge validates names up front instead of letting requests land on the wrong model.
+Restart Claude Code and ask it to run a plan, for example: _"Run task 3 of docs/plans/auth.md with Gemini."_ You get one approval card for the plan. Later tasks run without asking until the plan file changes.
 
-### Quota-aware failover
+## How it works
 
-agy never surfaces quota exhaustion in print mode — it silently retries the 429 until its print-timeout, then exits 0 with empty output, which used to look like an indefinite hang. The bridge now watches each run's log file (via `--log-file`) and on `RESOURCE_EXHAUSTED (code 429)`:
+```mermaid
+flowchart LR
+    C[Claude Code] -- agy_start --> J[JobManager]
+    J -- approval card<br/>once per plan --> U((You))
+    J --> P[Pipeline]
+    subgraph P[Pipeline: one job]
+      direction TB
+      W[worktree + setup] --> R[contract tests<br/>must fail] --> B[brief + skills<br/>+ tool-call gate] --> A[agy -p<br/>Gemini 3.8 Flash] --> V[server-side verify] --> M[commit + merge check]
+    end
+    P -- envelope --> J
+    J -- wake --> C
+    C -- agy_act finalize --> G[(your branch)]
+```
 
-1. kills the agy process group immediately (no waiting out the timeout),
-2. parses the reset time ("Resets in 4h24m") into an in-process cooldown registry,
-3. retries the same prompt on the next model in the tool's chain,
-4. skips cooled-down models on all subsequent calls until their quota resets.
+1. Start: Claude calls `agy_start` with a task and a token estimate; jobs that are cheaper to do directly are refused.
+2. Approve: one card per plan, valid for 24 hours or until the plan file changes.
+3. Isolate: a git worktree, your setup command, and contract tests that must fail before Gemini starts.
+4. Gate: a hook decides every tool call; your global agy settings can't widen it.
+5. Run: Gemini runs headless; if the quota runs out, you choose retry, continue without Gemini, or wait.
+6. Verify: protected files are restored, then the tests run and the counts and git state are checked for tampering.
+7. Merge: Claude reviews the result and squashes the branch.
 
-Failovers are annotated in the response footer (`failover: <model>: quota exhausted (resets in 4h24m)`). Only when every candidate is exhausted does the call fail — in seconds, with reset times listed — instead of hanging.
+When a job fails, the failure is recorded as an incident and Claude writes a one-line lesson. Lessons that match a new task are added to its brief. A lesson that shows up three times is offered to you as a permanent rule for the skill.
 
-### Timeouts and cancellation
+## Reference
 
-Each tool has its own default timeout sized to its job: `web_lookup` 120s, `deep_search` 180s, `analyze_files` / `adversarial_review` / `follow_up` 300s, `delegate` 600s. Setting `AGY_TIMEOUT` explicitly overrides all of them at once. To change a single tool, set `AGY_TIMEOUT_<TOOL_NAME>` instead (e.g. `AGY_TIMEOUT_DEEP_SEARCH=300`); a per-tool override takes precedence over the global `AGY_TIMEOUT` and the tool's default. The full set of per-tool variables is `AGY_TIMEOUT_ANALYZE_FILES`, `AGY_TIMEOUT_DEEP_SEARCH`, `AGY_TIMEOUT_WEB_LOOKUP`, `AGY_TIMEOUT_ADVERSARIAL_REVIEW`, `AGY_TIMEOUT_FOLLOW_UP`, and `AGY_TIMEOUT_DELEGATE`. The kill path escalates SIGTERM → SIGKILL across the whole process group, and the deadline fires even if agy's helper processes hold the output pipes open. Cancelling the tool call from the MCP client (e.g. pressing Esc in Claude Code) also kills the agy run instead of orphaning it.
+### MCP tools
 
-**Two timeout layers — align them.** The timeouts above are the _agy-side_ budget. Your MCP client (Claude Code) has its own, separate _tool-call_ timeout, and if it is shorter than the agy budget the client gives up first — you'll see `Error: timed out waiting for response` (note: agy-bridge's own timeout reads `agy timed out after Ns` instead). The work is not lost: the agy session persists, so `follow_up` with the returned `session_id` retrieves the result. But the real fix is to make the client wait at least as long as agy: the [Install](#install) command already sets a per-server `timeout` of 600000ms (scoped to the agy-bridge entry only). If you registered the server without it, re-run the `add-json` command from Install, or set the global env var `MCP_TOOL_TIMEOUT=600000`. Rule of thumb: **client `timeout` ≥ agy budget**.
+| Tool         | Purpose                                      |
+| ------------ | -------------------------------------------- |
+| `agy_status` | Running jobs, cooldown, top lessons          |
+| `agy_start`  | Start an `implement` or `explore` job        |
+| `agy_get`    | Progress or the final result                 |
+| `agy_act`    | Finalize, follow up, cancel, record a lesson |
 
-**Expected latency.** Most of the perceived "slowness" is cold start: the first call in a session spawns the agy CLI and warms the model. A simple `analyze_files` over 3 files measures around **40–50s cold** (≈46s observed), dropping on subsequent same-session calls. A first call that also hits a quota 429 takes longer while the bridge fails over. So a client timeout below ~60s will intermittently trip on cold starts even for "simple" questions — size it generously.
+### CLI
 
-## Configuration
+| Command                           | Purpose                           |
+| --------------------------------- | --------------------------------- |
+| `serve`                           | The MCP server (default)          |
+| `wait <job>`                      | Block until a job ends            |
+| `watch [job]`                     | Live progress in a terminal       |
+| `statusline`                      | Install or remove the status line |
+| `init`, `doctor`, `install-skill` | Setup                             |
 
-All optional, via environment variables:
+### Configuration
 
-| Variable               | Default    | Description                                                                                                               |
-| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `AGY_PATH`             | `agy`      | Path to the agy binary                                                                                                    |
-| `AGY_TIMEOUT`          | per-tool   | Seconds; overrides all per-tool timeouts at once (see above), passed as `--print-timeout`, enforced with a 15s kill grace |
-| `AGY_TIMEOUT_<TOOL>`   | per-tool   | Seconds; overrides the timeout for a single tool only, e.g. `AGY_TIMEOUT_DEEP_SEARCH=300`. Wins over `AGY_TIMEOUT`        |
-| `AGY_MAX_OUTPUT_CHARS` | `50000`    | Truncation cap for tool output                                                                                            |
-| `AGY_DEFAULT_MODEL`    | unset      | Fallback model when no chain entry is available                                                                           |
-| `AGY_SKIP_PERMISSIONS` | `true`     | Pass `--dangerously-skip-permissions` to agy                                                                              |
-| `AGY_SANDBOX`          | `false`    | Run agy with `--sandbox`                                                                                                  |
-| `AGY_ON_FAILURE`       | `fallback` | `strict` appends an instruction to failed-tool errors telling the calling agent not to absorb the work itself             |
+`init` creates `.agy-foreman.json` in the repo root:
 
-### Failure behavior
+```json
+{
+  "test_command": [
+    "npx",
+    "vitest",
+    "run",
+    "--reporter=default",
+    "--reporter=junit",
+    "--outputFile.junit=reports/junit.xml"
+  ],
+  "test_report": "reports/junit.xml",
+  "setup_command": ["npm", "ci"],
+  "allowed_commands": ["npm run typecheck", "npx prettier"],
+  "protected_paths": ["test/**", "**/*.test.*"]
+}
+```
 
-The bridge always fails loudly: agy errors surface as MCP tool errors with agy's actual stderr, and degraded model routing is annotated in the response footer. By default the calling agent (Claude) will typically do the work itself after a failure — visible in the transcript, but easy to stop noticing in a long session. Set `AGY_ON_FAILURE=strict` to append an explicit "do NOT perform this work yourself — report the failure to the user" instruction to every delegation error, so you keep control over when token savings are silently lost.
+| Key                  | Default       | Meaning                                       |
+| -------------------- | ------------- | --------------------------------------------- |
+| `test_command`       | none          | Command the server runs to verify             |
+| `test_report`        | none          | JUnit report for test counts                  |
+| `setup_command`      | none          | Runs in each new worktree                     |
+| `allowed_commands`   | `[]`          | Extra commands Gemini may run                 |
+| `unknown_commands`   | `deny`        | `deny`, `allow` or `ask_user`                 |
+| `protected_paths`    | test globs    | Files Gemini may not change                   |
+| `approval`           | `per_plan`    | `per_plan` or `per_task`                      |
+| `effort`             | `high`        | `low`, `medium` or `high`                     |
+| `max_concurrent`     | `2`           | Jobs at once                                  |
+| `max_runs_per_hour`  | `10`          | Hourly cap                                    |
+| `refuse_ratio`       | `1.5`         | When delegating costs more than doing it      |
+| `allowed_mcp`, `web` | `[]`, `false` | MCP tools and web access for Gemini           |
+| `gate`               | `elicitation` | `client` if your client has no approval cards |
+
+## Limitations
+
+- **Gemini 3.8 Flash only**, with effort `low`, `medium` or `high`. Other models in agy need plans that this project doesn't target.
+- **Implement jobs need a test command.** Without a machine check there is nothing to verify, so the skill tells Claude not to delegate.
+- **agy starts your global agy MCP servers on every run.** The gate denies Gemini access to them, but they still start up. agy has no per-run switch to turn this off.
+
+## Terms of service
+
+agy-foreman is not affiliated with Google.
+
+It uses agy the way Google describes [headless mode](https://antigravity.google/docs/faq): for scripting and CI. Every task is one non-interactive run with a fixed brief in a throwaway git worktree, and the result is checked by your test suite, like a CI job. It never touches your login and never switches accounts.
+
+Google's FAQ also says wrapping agy in third-party agents isn't supported on consumer plans. If you want to be fully covered, use it with a Gemini Enterprise account.
+
+agy-foreman is provided as is under the MIT license. You're responsible for how you use it with your Google account.
 
 ## Development
 
-```bash
-npm install
-npm test           # vitest unit tests (exec mocked — no agy needed)
-npm run typecheck
-npm run build      # tsup → dist/index.js
+```
+src/
+├── agy/        run(request) → Outcome: spawns agy -p, parses stream-json, detects quota, kills the process tree
+├── pipeline/   runJob(spec) → Envelope: worktree, contract tests, gate and hook, guard, verify, report
+├── jobs/       JobManager: approval, token gate, queue, quota card, progress, ledger, lessons
+├── server.ts   the four MCP tools
+├── cli.ts      serve, wait, watch, statusline, init, doctor, install-skill
+└── statusline.ts
+skills/gemini-delegation/   the skill (SKILL.md and 7 references)
 ```
 
-## Contributors
+```bash
+npm ci
+npm test            # unit and integration tests with the fake agy; CI runs them on Windows, Linux and macOS
+npm run test:ci     # typecheck, formatting check, then the tests (what agy-foreman runs to verify its own jobs)
+npm run test:live   # one small real agy call (uses a little quota)
+```
 
-Contributions are welcome — open an issue or PR.
+## Contributing
 
-<a href="https://github.com/sshahzaiib/agy-bridge/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=sshahzaiib/agy-bridge" alt="Contributors" />
-</a>
+Bug reports and pull requests are welcome. For bigger changes, please open an issue first so we can talk it through.
 
-## Star History
+Before you send a PR, run `npm run test:ci` (typecheck, formatting and tests), and add a test if you're fixing a bug.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=sshahzaiib/agy-bridge&type=Date)](https://www.star-history.com/#sshahzaiib/agy-bridge&Date)
+## Credits
+
+- [agy-bridge](https://github.com/sshahzaiib/agy-bridge) by Shahzaib (MIT): agy-foreman started as a fork of it.
+- [claude-agy-mcp](https://github.com/PyModel/claude-agy-mcp) by elkaix (MIT): the stream-json parser and the fake `agy` used in the tests are adapted from it.
+
+The license notices for both are in [NOTICE](NOTICE).
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Mountaser Halak

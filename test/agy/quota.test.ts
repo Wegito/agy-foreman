@@ -6,7 +6,7 @@ import {
   QuotaError,
   CooldownRegistry,
   DEFAULT_COOLDOWN_SEC,
-} from "../src/quota.js";
+} from "../../src/agy/quota.js";
 
 const LOG_429 =
   "E0613 00:38:03.030151 56767 log.go:398] agent executor error: RESOURCE_EXHAUSTED (code 429): " +
