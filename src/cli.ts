@@ -251,12 +251,6 @@ export async function main(argv: string[], io: Io): Promise<number> {
 
   if (cmd === "serve") {
     let server: McpServer;
-    const serverProxy = new Proxy({} as McpServer, {
-      get(_target, prop) {
-        const val = (server as any)[prop];
-        return typeof val === "function" ? val.bind(server) : val;
-      },
-    });
     const runtime = createRuntime({
       cwd: io.cwd,
       env: io.env,
@@ -264,7 +258,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
         gate === "client"
           ? new ClientModeApprover()
           : new ElicitationApprover(
-              serverProxy,
+              () => server,
               path.join(stateDir({ env: io.env }), "approvals.jsonl"),
             ),
     });

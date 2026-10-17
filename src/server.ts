@@ -31,13 +31,18 @@ export const HUMAN_MIN_MS = 700;
 
 export class ElicitationApprover implements Approver {
   /** @param logFile JSONL log of every card: what was asked, the answer, and how fast it came. */
+  /** @param server the MCP server, or a getter when the server is created after the approver. */
   constructor(
-    private server: McpServer,
+    private server: McpServer | (() => McpServer),
     private logFile?: string,
   ) {}
 
+  private mcp(): McpServer {
+    return typeof this.server === "function" ? this.server() : this.server;
+  }
+
   async promote(c: PromoteCard): Promise<boolean> {
-    if (!this.server.server.getClientCapabilities()?.elicitation) {
+    if (!this.mcp().server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
         "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
@@ -46,7 +51,7 @@ export class ElicitationApprover implements Approver {
   }
 
   async plan(c: PlanCard): Promise<boolean> {
-    if (!this.server.server.getClientCapabilities()?.elicitation) {
+    if (!this.mcp().server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
         "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
@@ -61,7 +66,7 @@ export class ElicitationApprover implements Approver {
    */
   private async confirm(message: string): Promise<boolean> {
     const started = Date.now();
-    const res = await this.server.server.elicitInput({
+    const res = await this.mcp().server.elicitInput({
       mode: "form",
       message: `${message}\n\nAccept to approve, Decline to deny.`,
       requestedSchema: {
@@ -97,7 +102,7 @@ export class ElicitationApprover implements Approver {
   }
 
   async task(c: TaskCard): Promise<boolean> {
-    if (!this.server.server.getClientCapabilities()?.elicitation) {
+    if (!this.mcp().server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
         "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
@@ -106,11 +111,11 @@ export class ElicitationApprover implements Approver {
   }
 
   async quota(c: QuotaCard): Promise<QuotaChoice | "unavailable"> {
-    if (!this.server.server.getClientCapabilities()?.elicitation) {
+    if (!this.mcp().server.getClientCapabilities()?.elicitation) {
       return "unavailable";
     }
     try {
-      const res = await this.server.server.elicitInput({
+      const res = await this.mcp().server.elicitInput({
         mode: "form",
         message: quotaCardText(c),
         requestedSchema: {
