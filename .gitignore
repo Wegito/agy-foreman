@@ -3,7 +3,5 @@ dist/
 *.log
 *.tgz
 package/
-docs/*
-!docs/multi-client-support.md
 test/.tmp/
 reports/
