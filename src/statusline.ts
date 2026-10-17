@@ -158,7 +158,8 @@ export function renderStatusLine(
   const sepPlain = "  ·  ";
   const label = seg("agy", ansi("1;35", "agy", color), 100);
   const titleSeg = (j: JobRecord, max: number): Segment => {
-    const num = j.plan ? `#${j.plan.step} ` : "";
+    // A followup reworks an earlier step after review; it does not finish a new step.
+    const num = j.plan ? `#${j.plan.step}${j.parentJobId ? " fix" : ""} ` : "";
     const t = truncate(cleanTitle(j.title), Math.max(1, max - num.length));
     return { ...seg(num + t, dim(num) + ansi("1", t, color), 80), shrink: (m) => titleSeg(j, m) };
   };

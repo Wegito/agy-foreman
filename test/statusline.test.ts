@@ -283,3 +283,12 @@ describe("cli statusline", () => {
     expect(JSON.parse(readFileSync(settings, "utf8")).statusLine.command).toContain("statusline");
   });
 });
+
+describe("review fixes", () => {
+  it("marks a followup as a fix of its step, so the unchanged step count is not mistaken for a hang", () => {
+    const fix = job({ id: "t-f", parentJobId: "t-a", plan: { file: "p.md", step: 1 } });
+    expect(renderStatusLine([fix], NOW, { color: false, planSteps: 7 })).toContain(
+      "#1 fix Incidents",
+    );
+  });
+});
