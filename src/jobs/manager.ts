@@ -19,15 +19,20 @@ import {
   repoHash,
   type Worktree,
 } from "../pipeline/worktree.js";
+import { appendFile, mkdir } from "node:fs/promises";
 import {
   ApprovalUnavailable,
+  ClientModeApprover,
   type Approver,
   type TaskCard,
   type PlanCard,
   type QuotaCard,
+  type PromoteCard,
 } from "./approver.js";
 import { FlagStore, hashPlan, validGrant } from "./flags.js";
+import { classifyIncident } from "./incidents.js";
 import { Ledger } from "./ledger.js";
+import { LessonError, tagsFor, type Audience, type Lesson, type LessonStore } from "./lessons.js";
 import { parsePlanStep, planTitle } from "./plan.js";
 import { computeProgress, renderProgressLine } from "./progress.js";
 import {
@@ -55,7 +60,7 @@ export interface StartInput {
 }
 
 export type StartResult =
-  | { state: "queued" | "running"; jobId: string; waitHint: string }
+  | { state: "queued" | "running"; jobId: string; waitHint: string; lessonsInjected?: number }
   | { state: "refused" | "denied"; reason: string }
   | {
       state: "quota";
@@ -85,7 +90,15 @@ export type ActInput =
   | { action: "cancel"; jobId: string }
   | { action: "quota_choice"; choice: "retry" | "continue_without" | "wait" }
   | { action: "resume_delegation" }
-  | { action: "revoke_plan"; planFile: string };
+  | { action: "revoke_plan"; planFile: string }
+  | {
+      action: "lesson";
+      text: string;
+      audience: Audience;
+      scope: "project" | "global";
+      tags?: string[];
+      jobId?: string;
+    };
 
 export interface JobManagerDeps {
   store: JobStore;
@@ -96,6 +109,8 @@ export interface JobManagerDeps {
   pipelineDeps: Omit<PipelineDeps, "onEvent" | "onPhase" | "signal">;
   loadConfig: (repoRoot: string) => Config;
   now: () => Date;
+  lessons?: (repoRoot: string) => { project: LessonStore; global: LessonStore };
+  skillDir?: (repoRoot: string) => string | undefined;
 }
 
 function isSamePath(p1: string, p2: string): boolean {
@@ -185,6 +200,7 @@ export class JobManager {
     let checklist: string[] | undefined;
     let planContent: string | undefined;
 
+    let planFiles: string[] = [];
     if (i.plan) {
       const planPath = path.isAbsolute(i.plan.file)
         ? i.plan.file
@@ -199,6 +215,7 @@ export class JobManager {
       }
       try {
         const step = parsePlanStep(planContent, i.plan.step);
+        planFiles = step.files;
         task = step.text;
         title = step.title;
         contractTests = i.kind === "explore" ? undefined : (i.contractTests ?? step.testBlocks);
@@ -230,6 +247,31 @@ export class JobManager {
       const firstLine = i.task.trim().split(/\r?\n/)[0];
       title = firstLine.slice(0, 80);
       contractTests = i.kind === "explore" ? undefined : i.contractTests;
+    }
+
+    const lessonTags = tagsFor({ files: planFiles, kind: i.kind });
+    let lessonsInjected: string[] = [];
+    if (this.deps.lessons) {
+      const stores = this.deps.lessons(i.repoRoot);
+      const projLessons = await stores.project.select("implementer", lessonTags, 5);
+      const globLessons = await stores.global.select("implementer", lessonTags, 5);
+      const seenTexts = new Set<string>();
+      for (const l of projLessons) {
+        if (!seenTexts.has(l.text)) {
+          seenTexts.add(l.text);
+          lessonsInjected.push(l.text);
+          if (lessonsInjected.length === 5) break;
+        }
+      }
+      if (lessonsInjected.length < 5) {
+        for (const l of globLessons) {
+          if (!seenTexts.has(l.text)) {
+            seenTexts.add(l.text);
+            lessonsInjected.push(l.text);
+            if (lessonsInjected.length === 5) break;
+          }
+        }
+      }
     }
 
     // 4. Token gate (implement only, skipped on dry run)
@@ -265,6 +307,7 @@ export class JobManager {
         date: this.deps.now().toISOString().slice(0, 10),
         testCommand: config.project.testCommand,
         skills: resolvedSkills.map((s) => ({ name: s.name, description: s.description })),
+        ...(lessonsInjected.length > 0 ? { lessons: lessonsInjected } : {}),
       });
 
       const command = buildArgs(
@@ -404,6 +447,7 @@ export class JobManager {
       contractTests,
       checklist,
       skills: i.skills,
+      ...(lessonsInjected.length > 0 ? { lessons: lessonsInjected } : {}),
       effort: i.effort ?? config.project.effort,
       baseRef: i.baseRef,
       timeoutSec: i.timeoutSec ?? config.runtime.defaultTimeoutSec,
@@ -439,6 +483,7 @@ export class JobManager {
       state,
       jobId,
       waitHint: `agy-orchestrator wait ${jobId}`,
+      lessonsInjected: lessonsInjected.length,
     };
   }
 
@@ -584,6 +629,12 @@ export class JobManager {
           at: this.deps.now().toISOString(),
         });
       } else if (envelope) {
+        const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
+        if (incident) {
+          record.incident = incident;
+        } else {
+          delete record.incident;
+        }
         record.envelope = envelope;
         record.state = envelope.state;
         record.progress.phase = "done";
@@ -605,6 +656,7 @@ export class JobManager {
           returnedTokens,
           usageTotal: envelope.usage?.totalTokens,
           at: this.deps.now().toISOString(),
+          ...(incident ? { incident } : {}),
         });
 
         if (envelope.state === "quota") {
@@ -962,6 +1014,120 @@ export class JobManager {
       return { state: "ok" };
     }
 
+    if (i.action === "lesson") {
+      let repoRoot = process.cwd();
+      let rec: JobRecord | undefined;
+      if (i.jobId) {
+        rec = await this.deps.store.read(i.jobId);
+        if (rec?.repoRoot) {
+          repoRoot = rec.repoRoot;
+        }
+      } else {
+        const allJobs = await this.deps.store.list();
+        if (allJobs.length > 0 && allJobs[0].repoRoot) {
+          repoRoot = allJobs[0].repoRoot;
+        }
+      }
+
+      if (!this.deps.lessons) {
+        return { state: "error", reason: "lessons not configured" };
+      }
+
+      const stores = this.deps.lessons(repoRoot);
+      const targetStore = i.scope === "global" ? stores.global : stores.project;
+
+      let extraTags: string[] = [];
+      if (rec) {
+        const files: string[] = [];
+        if (rec.envelope?.diffStat) {
+          for (const line of rec.envelope.diffStat.split("\n")) {
+            const pipeIdx = line.indexOf("|");
+            if (pipeIdx !== -1) {
+              const file = line.slice(0, pipeIdx).trim();
+              if (file) files.push(file);
+            }
+          }
+        }
+        extraTags = tagsFor({
+          files,
+          kind: rec.kind,
+          category: rec.incident?.category,
+        });
+      }
+
+      const tags = Array.from(new Set([...(i.tags ?? []), ...extraTags]));
+
+      let addRes: { lesson: Lesson; merged: boolean };
+      try {
+        addRes = await targetStore.add({
+          text: i.text,
+          audience: i.audience,
+          scope: i.scope,
+          tags,
+        });
+      } catch (err) {
+        if (err instanceof LessonError) {
+          return { state: "refused", reason: err.message };
+        }
+        throw err;
+      }
+
+      const { lesson, merged } = addRes;
+      let promotion: "approved" | "declined" | "suggested" | undefined;
+
+      const skillDir = this.deps.skillDir?.(repoRoot);
+      if (lesson.hits >= 3 && !lesson.promoted && skillDir) {
+        const KNOWN_ISSUES_CATS = new Set([
+          "cat:test_tampering",
+          "cat:protected_file_attempt",
+          "cat:env_setup",
+          "cat:agy_error",
+          "cat:timeout_too_short",
+          "cat:quota",
+        ]);
+
+        let targetFile: string;
+        if (lesson.audience === "orchestrator") {
+          targetFile = path.join(skillDir, "references", "routing.md");
+        } else if (lesson.tags.some((t) => KNOWN_ISSUES_CATS.has(t))) {
+          targetFile = path.join(skillDir, "references", "known-issues.md");
+        } else {
+          targetFile = path.join(skillDir, "references", "prompting.md");
+        }
+
+        const card: PromoteCard = {
+          lessonText: lesson.text,
+          hits: lesson.hits,
+          targetFile,
+        };
+
+        const isClient =
+          this.deps.approver instanceof ClientModeApprover ||
+          (this.deps.approver as any).isClientMode ||
+          this.deps.loadConfig(repoRoot).project.gate === "client";
+
+        const approved = await this.deps.approver.promote(card);
+        if (approved) {
+          const todayStr = this.deps.now().toISOString().slice(0, 10);
+          await mkdir(path.dirname(targetFile), { recursive: true });
+          await appendFile(targetFile, `\n- ${lesson.text} _(learned ${todayStr})_\n`, "utf8");
+          await targetStore.markPromoted(lesson.id, todayStr);
+          promotion = "approved";
+        } else if (isClient) {
+          promotion = "suggested";
+        } else {
+          promotion = "declined";
+        }
+      }
+
+      return {
+        state: "ok",
+        lesson,
+        merged,
+        ...(promotion !== undefined ? { promotion } : {}),
+      };
+    }
+
     return { state: "error", reason: `unknown action: ${(i as any).action}` };
   }
 
@@ -997,6 +1163,31 @@ export class JobManager {
     const today = await this.deps.ledger.stats(startOfToday);
     const calibration = await this.deps.ledger.calibration();
 
+    let lessons: string[] = [];
+    if (this.deps.lessons) {
+      const rRoot = repoRoot ?? filteredJobs[0]?.repoRoot ?? process.cwd();
+      const stores = this.deps.lessons(rRoot);
+      const projLessons = await stores.project.select("orchestrator", [], 5);
+      const globLessons = await stores.global.select("orchestrator", [], 5);
+      const seen = new Set<string>();
+      for (const l of projLessons) {
+        if (!seen.has(l.text)) {
+          seen.add(l.text);
+          lessons.push(l.text);
+          if (lessons.length === 5) break;
+        }
+      }
+      if (lessons.length < 5) {
+        for (const l of globLessons) {
+          if (!seen.has(l.text)) {
+            seen.add(l.text);
+            lessons.push(l.text);
+            if (lessons.length === 5) break;
+          }
+        }
+      }
+    }
+
     return {
       delegation,
       ...(cooldown ? { cooldown } : {}),
@@ -1004,6 +1195,7 @@ export class JobManager {
       queued,
       today,
       calibration,
+      lessons,
     };
   }
 }

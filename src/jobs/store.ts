@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Envelope, JobState } from "../pipeline/index.js";
+import type { Incident } from "./incidents.js";
 
 export type JobPhase =
   | "queued"
@@ -49,6 +50,7 @@ export interface JobRecord {
   parentJobId?: string;
   envelope?: Envelope;
   returnedChars: number;
+  incident?: Incident;
 }
 
 export function isTerminal(state: RecordState): boolean {

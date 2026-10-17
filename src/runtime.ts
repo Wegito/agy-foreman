@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ import { loadConfig, loadRuntimeConfig } from "./config.js";
 import { type Approver } from "./jobs/approver.js";
 import { FlagStore } from "./jobs/flags.js";
 import { Ledger } from "./jobs/ledger.js";
+import { LessonStore } from "./jobs/lessons.js";
 import { JobManager, type JobManagerDeps } from "./jobs/manager.js";
 import { JobStore } from "./jobs/store.js";
 import { jobsDir, stateDir, worktreeRoot } from "./paths.js";
@@ -38,6 +40,10 @@ export function createRuntime(o: {
       const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
       return o.approverFor(gate).quota(c);
     },
+    promote: (c) => {
+      const gate = loadConfig({ repoRoot: o.cwd, env: o.env }).project.gate;
+      return o.approverFor(gate).promote(c);
+    },
   };
 
   const runtimeCfg = loadRuntimeConfig(o.env);
@@ -60,6 +66,20 @@ export function createRuntime(o: {
     },
     loadConfig: (repoRoot: string) => loadConfig({ repoRoot, env: o.env }),
     now: () => new Date(),
+    lessons: (repoRoot: string) => ({
+      project: new LessonStore(path.join(repoRoot, ".agy-orchestrator", "lessons.json")),
+      global: new LessonStore(path.join(sDir, "lessons.json")),
+    }),
+    skillDir: (repoRoot: string) => {
+      const candidates = [
+        path.join(repoRoot, ".claude", "skills", "gemini-delegation"),
+        path.join(os.homedir(), ".claude", "skills", "gemini-delegation"),
+      ];
+      for (const cand of candidates) {
+        if (existsSync(cand)) return cand;
+      }
+      return undefined;
+    },
   };
 
   const manager = new JobManager(deps);

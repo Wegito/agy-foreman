@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Estimate } from "./store.js";
+import type { Incident } from "./incidents.js";
 
 export interface LedgerEntry {
   jobId: string;
@@ -12,6 +13,7 @@ export interface LedgerEntry {
   returnedTokens: number;
   usageTotal?: number;
   at: string;
+  incident?: Incident;
 }
 
 export class Ledger {

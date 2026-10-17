@@ -5,11 +5,13 @@ import {
   planCardText,
   taskCardText,
   quotaCardText,
+  promoteCardText,
   type Approver,
   type PlanCard,
   type TaskCard,
   type QuotaCard,
   type QuotaChoice,
+  type PromoteCard,
 } from "./jobs/approver.js";
 import type { ActInput, JobManager, StartInput } from "./jobs/manager.js";
 import { renderProgressLine } from "./jobs/progress.js";
@@ -23,6 +25,15 @@ export const TOOL_NAMES: readonly ["agy_status", "agy_start", "agy_get", "agy_ac
 
 export class ElicitationApprover implements Approver {
   constructor(private server: McpServer) {}
+
+  async promote(c: PromoteCard): Promise<boolean> {
+    if (!this.server.server.getClientCapabilities()?.elicitation) {
+      throw new ApprovalUnavailable(
+        "client does not support approval cards; set gate: client in .agy-orchestrator.json",
+      );
+    }
+    return this.confirm(promoteCardText(c));
+  }
 
   async plan(c: PlanCard): Promise<boolean> {
     if (!this.server.server.getClientCapabilities()?.elicitation) {
@@ -268,13 +279,18 @@ export function createServer(
             "quota_choice",
             "resume_delegation",
             "revoke_plan",
+            "lesson",
           ])
           .describe("Action"),
-        job_id: z.string().optional().describe("Target job ID"),
+        job_id: z.string().optional().describe("Job ID"),
         feedback: z.string().optional().describe("Feedback"),
         mode: z.enum(["squash", "merge", "discard", "keep"]).optional().describe("Finalize mode"),
         choice: z.enum(["retry", "continue_without", "wait"]).optional().describe("Quota choice"),
         plan_file: z.string().optional().describe("Plan file to revoke"),
+        text: z.string().optional().describe("Lesson text"),
+        audience: z.enum(["implementer", "orchestrator"]).optional().describe("Audience"),
+        scope: z.enum(["project", "global"]).optional().describe("Scope"),
+        tags: z.array(z.string()).optional().describe("Tags"),
       },
     },
     async (args) => {
@@ -327,6 +343,24 @@ export function createServer(
             };
           }
           actInput = { action: "revoke_plan", planFile: args.plan_file };
+          break;
+        case "lesson":
+          if (typeof args.text !== "string" || !args.audience || !args.scope) {
+            return {
+              isError: true,
+              content: [
+                { type: "text", text: "action 'lesson' requires text, audience, and scope" },
+              ],
+            };
+          }
+          actInput = {
+            action: "lesson",
+            text: args.text,
+            audience: args.audience,
+            scope: args.scope,
+            ...(args.tags !== undefined ? { tags: args.tags } : {}),
+            ...(args.job_id !== undefined ? { jobId: args.job_id } : {}),
+          };
           break;
         default:
           return {

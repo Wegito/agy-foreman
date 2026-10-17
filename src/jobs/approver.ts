@@ -23,10 +23,21 @@ export interface QuotaCard {
 
 export type QuotaChoice = "retry" | "continue_without" | "wait";
 
+export interface PromoteCard {
+  lessonText: string;
+  hits: number;
+  targetFile: string;
+}
+
+export function promoteCardText(c: PromoteCard): string {
+  return `Add a learned rule to the gemini-delegation skill?\n"${c.lessonText}" (seen ${c.hits}×)\n→ ${c.targetFile}`;
+}
+
 export interface Approver {
   plan(c: PlanCard): Promise<boolean>;
   task(c: TaskCard): Promise<boolean>;
   quota(c: QuotaCard): Promise<QuotaChoice | "unavailable">;
+  promote(c: PromoteCard): Promise<boolean>;
 }
 
 export class ApprovalUnavailable extends Error {}
@@ -78,6 +89,8 @@ export function quotaCardText(c: QuotaCard): string {
 }
 
 export class ClientModeApprover implements Approver {
+  readonly isClientMode = true;
+
   async plan(_c: PlanCard): Promise<boolean> {
     return true;
   }
@@ -89,16 +102,21 @@ export class ClientModeApprover implements Approver {
   async quota(_c: QuotaCard): Promise<QuotaChoice | "unavailable"> {
     return "unavailable";
   }
+
+  async promote(_c: PromoteCard): Promise<boolean> {
+    return false;
+  }
 }
 
 export class FakeApprover implements Approver {
-  calls: { kind: "plan" | "task" | "quota"; card: unknown }[] = [];
+  calls: { kind: "plan" | "task" | "quota" | "promote"; card: unknown }[] = [];
 
   constructor(
     private answers?: {
       plan?: boolean;
       task?: boolean;
       quota?: QuotaChoice | "unavailable";
+      promote?: boolean;
     },
   ) {}
 
@@ -115,5 +133,10 @@ export class FakeApprover implements Approver {
   async quota(c: QuotaCard): Promise<QuotaChoice | "unavailable"> {
     this.calls.push({ kind: "quota", card: c });
     return this.answers?.quota ?? "unavailable";
+  }
+
+  async promote(c: PromoteCard): Promise<boolean> {
+    this.calls.push({ kind: "promote", card: c });
+    return this.answers?.promote ?? false;
   }
 }
