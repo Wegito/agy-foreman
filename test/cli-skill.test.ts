@@ -29,6 +29,8 @@ describe("install-skill", () => {
   it("installs into the project with --project", async () => {
     const cwd = mkdtempSync(path.join(os.tmpdir(), "agyo-proj-"));
     expect(await main(["install-skill", "--project"], io(env, cwd).i)).toBe(0);
-    expect(existsSync(path.join(cwd, ".claude", "skills", "gemini-delegation", "SKILL.md"))).toBe(true);
+    expect(existsSync(path.join(cwd, ".claude", "skills", "gemini-delegation", "SKILL.md"))).toBe(
+      true,
+    );
   });
 });

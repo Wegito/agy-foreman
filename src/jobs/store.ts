@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { KeyedQueue, renameWithRetry } from "./fsutil.js";
+import { KeyedQueue, readFileWithRetry, renameWithRetry } from "./fsutil.js";
 import type { Envelope, JobState } from "../pipeline/index.js";
 import type { Incident } from "./incidents.js";
 
@@ -96,7 +96,7 @@ export class JobStore {
   async read(id: string): Promise<JobRecord | undefined> {
     const filePath = path.join(this.dir, `${id}.json`);
     try {
-      const data = await readFile(filePath, "utf8");
+      const data = await readFileWithRetry(filePath);
       return JSON.parse(data) as JobRecord;
     } catch (err: unknown) {
       if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {

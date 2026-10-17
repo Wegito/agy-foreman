@@ -25,14 +25,31 @@ describe("gemini-delegation skill", () => {
   it("states the key rules", () => {
     const text = all();
     for (const s of [
-      "agy_start", "agy_get", "agy_act", "agy_status", "gemini-3.8-flash-high", "low", "medium", "high",
-      "contract test", "estimate", "once per plan", "agy-orchestrator wait", "Continue without Gemini",
-      "two strikes", "grep", "untrusted", "finalize", "follow",
-    ]) expect(text.toLowerCase(), s).toContain(s.toLowerCase());
+      "agy_start",
+      "agy_get",
+      "agy_act",
+      "agy_status",
+      "gemini-3.8-flash-high",
+      "low",
+      "medium",
+      "high",
+      "contract test",
+      "estimate",
+      "once per plan",
+      "agy-orchestrator wait",
+      "Continue without Gemini",
+      "two strikes",
+      "grep",
+      "untrusted",
+      "finalize",
+      "follow",
+    ])
+      expect(text.toLowerCase(), s).toContain(s.toLowerCase());
   });
   it("carries the live-verified known issues with sources", () => {
     const k = read("references/known-issues.md");
-    for (const s of ["print timeout", "SUCCESS", "always-proceed", "word", "stdin", "taskkill"]) expect(k, s).toContain(s);
+    for (const s of ["print timeout", "SUCCESS", "always-proceed", "word", "stdin", "taskkill"])
+      expect(k, s).toContain(s);
     expect(k).toMatch(/Source|source/);
   });
   it("never sets word limits for briefs and never mentions account switching", () => {

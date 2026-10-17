@@ -1,4 +1,4 @@
-import { rename, rm } from "node:fs/promises";
+import { readFile, rename, rm } from "node:fs/promises";
 
 const RETRYABLE = new Set(["EPERM", "EBUSY", "EACCES"]);
 
@@ -37,5 +37,18 @@ export class KeyedQueue {
       })
       .catch(() => {});
     return next;
+  }
+}
+
+/** readFile() that retries while Windows briefly locks a file that is being replaced. */
+export async function readFileWithRetry(file: string, attempts = 12): Promise<string> {
+  for (let i = 0; ; i++) {
+    try {
+      return await readFile(file, "utf8");
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? "";
+      if (!RETRYABLE.has(code) || i >= attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 10 * (i + 1)));
+    }
   }
 }
