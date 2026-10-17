@@ -200,6 +200,7 @@ async function runImplementJob(
   // 2. contract
   deps.onPhase?.("contract");
   let contractInfo: { redOnBase: boolean; greenAfter: boolean } | undefined = undefined;
+  const startSha = wt.baseSha;
 
   if (spec.contractTests && spec.contractTests.length > 0) {
     await addContractTests(wt, spec.contractTests);
@@ -398,6 +399,7 @@ async function runImplementJob(
       snapshot,
       ignoreBranch: wt.branch ?? undefined,
       timeoutMs: spec.timeoutSec * 1000,
+      startSha,
     });
     if (contractInfo) {
       contractInfo.greenAfter = verifyReport.passed;

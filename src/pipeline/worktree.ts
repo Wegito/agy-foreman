@@ -223,6 +223,37 @@ export async function snapshotGitState(
   return { refs, hooks, config };
 }
 
+/**
+ * Ref changes that point at commits made during the job (reachable from the job's HEAD but not
+ * from where the job started). Changes the user makes meanwhile, such as committing to main,
+ * point elsewhere and are ignored. Returns "<ref> -> <sha>" entries.
+ */
+export async function suspiciousRefChanges(
+  repoRoot: string,
+  before: GitSnapshot,
+  after: GitSnapshot,
+  o: { jobHead: string; startSha: string },
+): Promise<string[]> {
+  const parse = (s: string) =>
+    new Map(
+      s
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => [l.slice(0, l.lastIndexOf(" ")), l.slice(l.lastIndexOf(" ") + 1)] as const),
+    );
+  const isAncestor = async (a: string, b: string) =>
+    (await runCommand(["git", "merge-base", "--is-ancestor", a, b], { cwd: repoRoot })).code === 0;
+  const prev = parse(before.refs);
+  const out: string[] = [];
+  for (const [ref, sha] of parse(after.refs)) {
+    if (prev.get(ref) === sha) continue;
+    if ((await isAncestor(sha, o.jobHead)) && !(await isAncestor(sha, o.startSha))) {
+      out.push(`${ref} -> ${sha.slice(0, 8)}`);
+    }
+  }
+  return out;
+}
+
 export function gitStateChanged(before: GitSnapshot, after: GitSnapshot): string[] {
   const changed: string[] = [];
   if (before.refs !== after.refs) changed.push("refs");

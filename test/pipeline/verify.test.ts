@@ -94,6 +94,19 @@ describe("verify", () => {
     await removeWorktree(wt, { deleteBranch: true });
   }, 30_000);
 
+  // Regression (found live): the user committed to main while a job ran and the job failed as "tampered".
+  it("ignores the user's own commits on main during the job", async () => {
+    const { repo, wt, base } = await setup();
+    writeFileSync(path.join(wt.path, "src/v.txt"), "good\n");
+    writeFileSync(path.join(repo, "README.md"), "user work\n");
+    await git(["add", "README.md"], repo);
+    await git(["commit", "-q", "-m", "user commit during job"], repo);
+    const r = await verify(base);
+    expect(r.tamper).toEqual([]);
+    expect(r.passed).toBe(true);
+    await removeWorktree(wt, { deleteBranch: true });
+  }, 30_000);
+
   it("flags audit patterns in non-protected files and detects ref tampering", async () => {
     const { repo, wt, base } = await setup();
     writeFileSync(path.join(wt.path, "src/v.txt"), "good\n");

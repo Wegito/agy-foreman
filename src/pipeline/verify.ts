@@ -6,6 +6,7 @@ import { parseJUnit, type TestCounts } from "./junit.js";
 import {
   changedFiles,
   gitStateChanged,
+  suspiciousRefChanges,
   snapshotGitState,
   type GitSnapshot,
   type Worktree,
@@ -20,6 +21,8 @@ export interface VerifyInput {
   snapshot: GitSnapshot;
   ignoreBranch?: string;
   timeoutMs: number;
+  /** Commit the job started from (before contract tests); defaults to wt.baseSha. */
+  startSha?: string;
 }
 
 export interface VerifyReport {
@@ -94,7 +97,16 @@ export async function verify(i: VerifyInput): Promise<VerifyReport> {
 
   // 5. tamper check
   const currentSnapshot = await snapshotGitState(i.wt.repoRoot, i.ignoreBranch);
-  const tamper = gitStateChanged(i.snapshot, currentSnapshot);
+  let tamper = gitStateChanged(i.snapshot, currentSnapshot);
+  if (tamper.includes("refs")) {
+    // Only refs moved to the job's own commits count; the user may commit to main meanwhile.
+    const jobHead = await git(["rev-parse", "HEAD"], i.wt.path);
+    const suspicious = await suspiciousRefChanges(i.wt.repoRoot, i.snapshot, currentSnapshot, {
+      jobHead,
+      startSha: i.startSha ?? i.wt.baseSha,
+    });
+    if (suspicious.length === 0) tamper = tamper.filter((t) => t !== "refs");
+  }
 
   // 6. auditFlags: scan added lines of git diff <baseSha> (incl. untracked files) in non-protected files
   const foundFlags = new Set<string>();
