@@ -150,3 +150,32 @@ describe("JobScheduler", () => {
     await until(() => done);
   });
 });
+
+// Regression (found live): a job queued by the hourly cap while nothing ran was never re-checked.
+describe("JobScheduler retry", () => {
+  it("starts a capped job once the hour has passed, even with nothing running", async () => {
+    const store = new JobStore(mkdtempSync(path.join(os.tmpdir(), "foreman-sched-")));
+    let now = NOW;
+    const started: string[] = [];
+    const s = new JobScheduler({
+      store,
+      loadConfig: () => ({
+        project: parseProjectConfig({ test_command: ["x"], max_runs_per_hour: 1 }),
+        runtime: loadRuntimeConfig({}),
+      }),
+      now: () => now,
+      retryMs: 20,
+      run: async (r) => {
+        started.push(r.id);
+      },
+    });
+    expect(await s.submit(rec("a"), spec("a"))).toBe("running");
+    await until(() => started.length === 1);
+    expect(await s.submit(rec("b"), spec("b"))).toBe("queued");
+    await pause(100);
+    expect(started).toEqual(["a"]);
+    now = new Date(NOW.getTime() + 61 * 60_000);
+    await until(() => started.length === 2);
+    expect(started).toEqual(["a", "b"]);
+  });
+});

@@ -10,6 +10,8 @@ export interface SchedulerDeps {
   /** Runs one job to completion and resolves when it is over (the record is already terminal). */
   run: (record: JobRecord, spec: JobSpec, signal: AbortSignal) => Promise<void>;
   isAlive?: (pid: number) => boolean;
+  /** How often queued jobs are re-checked while some wait (default 60 s). */
+  retryMs?: number;
 }
 
 function defaultIsAlive(pid: number): boolean {
@@ -31,6 +33,7 @@ export class JobScheduler {
   private writeQueues = new Map<string, Promise<void>>();
   private idleWaiters = new Set<() => void>();
   private scheduleLock: Promise<void> = Promise.resolve();
+  private retryTimer?: NodeJS.Timeout;
 
   private isAlive: (pid: number) => boolean;
 
@@ -145,7 +148,21 @@ export class JobScheduler {
           this.startJob(queued.record, queued.spec);
         }
       }
+      this.scheduleRetry();
     });
+  }
+
+  /**
+   * Found live: a job blocked by the hourly cap while nothing ran was never re-checked, because
+   * draining only happened when a running job finished. While jobs wait, re-check periodically.
+   */
+  private scheduleRetry(): void {
+    if (this.queuedJobs.size === 0 || this.retryTimer) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      void this.drain();
+    }, this.deps.retryMs ?? 60_000);
+    this.retryTimer.unref();
   }
 
   /** Writes the record as "running" or "queued" and starts it when the repo has a free slot. */
@@ -162,6 +179,7 @@ export class JobScheduler {
         this.startJob(record, spec);
       } else {
         this.queuedJobs.set(record.id, { record, spec });
+        this.scheduleRetry();
       }
 
       return state;
