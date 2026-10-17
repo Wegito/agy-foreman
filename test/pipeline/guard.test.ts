@@ -5,7 +5,7 @@ import { makeGuard } from "../../src/pipeline/guard.js";
 import type { GatePolicy } from "../../src/pipeline/gate.js";
 import type { StreamEvent } from "../../src/agy/types.js";
 
-const WT = path.join(os.tmpdir(), "agyo-guard-wt");
+const WT = path.join(os.tmpdir(), "foreman-guard-wt");
 const policy: GatePolicy = {
   mode: "implement",
   worktree: WT,

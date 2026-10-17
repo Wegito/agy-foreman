@@ -248,7 +248,7 @@ export const REFRESH_INTERVAL_SEC = 2;
 export const STATUS_PADDING = 1;
 
 export function claudeSettingsPath(env: NodeJS.ProcessEnv): string {
-  if (env.AGYO_CLAUDE_SETTINGS) return env.AGYO_CLAUDE_SETTINGS;
+  if (env.FOREMAN_CLAUDE_SETTINGS) return env.FOREMAN_CLAUDE_SETTINGS;
   const home = env.USERPROFILE || env.HOME || os.homedir();
   return path.join(home, ".claude", "settings.json");
 }
@@ -364,7 +364,7 @@ export async function previousStatusLine(
   const r = await runCommand(shell, {
     cwd,
     timeoutMs: 2000,
-    env: { ...process.env, AGYO_STDIN: stdin },
+    env: { ...process.env, FOREMAN_STDIN: stdin },
   });
   return r.code === 0 ? (r.stdout.trim().split(/\r?\n/)[0] ?? "") : "";
 }

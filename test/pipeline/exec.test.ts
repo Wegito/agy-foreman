@@ -70,15 +70,11 @@ describe("multi-line arguments", () => {
     const path = await import("node:path");
     writeFileSync(path.join(repo, "a.txt"), "b");
     await git(
-      [
-        "commit",
-        "-qam",
-        "Title\n\nImplemented-by: gemini via agy-orchestrator\nVerified: 3/3 tests",
-      ],
+      ["commit", "-qam", "Title\n\nImplemented-by: gemini via agy-foreman\nVerified: 3/3 tests"],
       repo,
     );
     expect(await git(["log", "-1", "--format=%B"], repo)).toBe(
-      "Title\n\nImplemented-by: gemini via agy-orchestrator\nVerified: 3/3 tests",
+      "Title\n\nImplemented-by: gemini via agy-foreman\nVerified: 3/3 tests",
     );
   });
 });

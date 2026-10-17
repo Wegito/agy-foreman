@@ -9,7 +9,7 @@ function main() {
     const name = String(toolCall.name ?? "");
     const args = (toolCall.args ?? {}) as Record<string, unknown>;
 
-    const policyUrl = new URL("./agyo-policy.json", import.meta.url);
+    const policyUrl = new URL("./foreman-policy.json", import.meta.url);
     const policy = JSON.parse(readFileSync(policyUrl, "utf8")) as GatePolicy;
 
     const res = decide(policy, { name, args });
@@ -25,7 +25,7 @@ function main() {
       arg,
     };
 
-    const reviewUrl = new URL("./agyo-review.jsonl", import.meta.url);
+    const reviewUrl = new URL("./foreman-review.jsonl", import.meta.url);
     appendFileSync(reviewUrl, JSON.stringify(logEntry) + "\n", "utf8");
 
     process.stdout.write(JSON.stringify(res));
@@ -34,7 +34,7 @@ function main() {
     process.stdout.write(
       JSON.stringify({
         decision: "deny",
-        reason: `agyo gate error: ${message}`,
+        reason: `foreman gate error: ${message}`,
       }),
     );
   }

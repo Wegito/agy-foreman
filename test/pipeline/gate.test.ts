@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { decide, globToRegExp, type GatePolicy } from "../../src/pipeline/gate.js";
 
-const WT = path.join(os.tmpdir(), "agyo-gate-wt");
+const WT = path.join(os.tmpdir(), "foreman-gate-wt");
 const p = (o: Partial<GatePolicy> = {}): GatePolicy => ({
   mode: "implement",
   worktree: WT,
@@ -56,7 +56,7 @@ describe("writes", () => {
 
 describe("reads", () => {
   it("allows the worktree and read-only dirs, denies the rest", () => {
-    const ro = path.join(os.tmpdir(), "agyo-ro");
+    const ro = path.join(os.tmpdir(), "foreman-ro");
     expect(d(p({ readOnlyDirs: [ro] }), "view_file", { AbsolutePath: path.join(ro, "x.md") })).toBe(
       "auto_approve",
     );

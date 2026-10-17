@@ -25,10 +25,10 @@ describe("built MCP server", () => {
       },
     );
     const child = spawn(process.execPath, [path.join(out, "index.js"), "serve"], {
-      cwd: mkdtempSync(path.join(os.tmpdir(), "agyo-serve-cwd-")),
+      cwd: mkdtempSync(path.join(os.tmpdir(), "foreman-serve-cwd-")),
       env: {
         ...process.env,
-        AGYO_STATE_DIR: mkdtempSync(path.join(os.tmpdir(), "agyo-serve-state-")),
+        FOREMAN_STATE_DIR: mkdtempSync(path.join(os.tmpdir(), "foreman-serve-state-")),
       },
       stdio: ["pipe", "pipe", "pipe"],
     });

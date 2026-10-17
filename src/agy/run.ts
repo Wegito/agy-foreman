@@ -44,7 +44,7 @@ const defaultDeps: RunDeps = {
   spawn: nodeSpawn,
   killTree: (pid) => nodeKillTree(pid),
   // Private per-run temp dir: agy's log contains the account email.
-  makeLogPath: () => path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-")), "agy.log"),
+  makeLogPath: () => path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-")), "agy.log"),
   readLog: async (p) => {
     try {
       return await readFile(p, "utf8");
@@ -53,7 +53,7 @@ const defaultDeps: RunDeps = {
     }
   },
   removeLog: async (p) => {
-    await rm(path.dirname(p).includes("agyo-") ? path.dirname(p) : p, {
+    await rm(path.dirname(p).includes("foreman-") ? path.dirname(p) : p, {
       recursive: true,
       force: true,
     });

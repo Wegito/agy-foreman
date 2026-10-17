@@ -27,6 +27,6 @@
     ".github/**",
     "package.json",
     "package-lock.json",
-    ".agy-orchestrator.json"
+    ".agy-foreman.json"
   ]
 }

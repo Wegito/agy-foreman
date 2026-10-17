@@ -6,7 +6,7 @@ import { LessonStore, LessonError, similar, tagsFor, MAX_ACTIVE } from "../../sr
 
 const store = (now = () => new Date("2026-10-17T12:00:00Z")) =>
   new LessonStore(
-    path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-les-")), "sub", "lessons.json"),
+    path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-les-")), "sub", "lessons.json"),
     now,
   );
 

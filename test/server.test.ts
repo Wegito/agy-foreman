@@ -10,7 +10,7 @@ function fakeManager(log: unknown[]): JobManager {
   return {
     start: async (i: unknown) => {
       log.push(["start", i]);
-      return { state: "running", jobId: "t-1", waitHint: "agy-orchestrator wait t-1" };
+      return { state: "running", jobId: "t-1", waitHint: "agy-foreman wait t-1" };
     },
     get: async (id: string) => (id === "t-1" ? { id, state: "passed" } : undefined),
     act: async (i: unknown) => {

@@ -84,7 +84,7 @@ const TASKS = [
 describe("OpenSpec changes", () => {
   const change = () => {
     const dir = path.join(
-      mkdtempSync(path.join(os.tmpdir(), "agyo-os-")),
+      mkdtempSync(path.join(os.tmpdir(), "foreman-os-")),
       "openspec",
       "changes",
       "add-amp",

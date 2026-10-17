@@ -13,7 +13,7 @@ describe("live agy", () => {
     const o = await run(
       {
         prompt: "Reply with exactly the word: pong. Do not use any tools.",
-        cwd: mkdtempSync(path.join(os.tmpdir(), "agyo-live-")),
+        cwd: mkdtempSync(path.join(os.tmpdir(), "foreman-live-")),
         model: "gemini-3.8-flash-low",
         mode: "plan",
         timeoutSec: 120,

@@ -13,9 +13,9 @@ const io = (env: NodeJS.ProcessEnv, cwd: string) => {
 };
 
 describe("install-skill", () => {
-  const env = { AGYO_SKILL_SRC: path.join(root, "skills", "gemini-delegation") };
+  const env = { FOREMAN_SKILL_SRC: path.join(root, "skills", "gemini-delegation") };
   it("installs into the user's ~/.claude/skills by default and refuses twice", async () => {
-    const home = mkdtempSync(path.join(os.tmpdir(), "agyo-home-"));
+    const home = mkdtempSync(path.join(os.tmpdir(), "foreman-home-"));
     const a = io({ ...env, USERPROFILE: home, HOME: home }, os.tmpdir());
     expect(await main(["install-skill"], a.i)).toBe(0);
     const target = path.join(home, ".claude", "skills", "gemini-delegation");
@@ -27,7 +27,7 @@ describe("install-skill", () => {
     expect(b.out.join("\n")).toContain("already installed");
   });
   it("installs into the project with --project", async () => {
-    const cwd = mkdtempSync(path.join(os.tmpdir(), "agyo-proj-"));
+    const cwd = mkdtempSync(path.join(os.tmpdir(), "foreman-proj-"));
     expect(await main(["install-skill", "--project"], io(env, cwd).i)).toBe(0);
     expect(existsSync(path.join(cwd, ".claude", "skills", "gemini-delegation", "SKILL.md"))).toBe(
       true,

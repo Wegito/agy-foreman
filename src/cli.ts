@@ -224,7 +224,7 @@ function describeInstall(r: InstallResult): string {
   if (r.state === "already_installed") return `status line: already installed (${r.settings})`;
   if (r.state === "wrapped")
     return `status line: installed in ${r.settings}, shown after your existing one (${r.previous})`;
-  return `status line: installed in ${r.settings} (restart Claude Code to see it; remove with: agy-orchestrator statusline --uninstall)`;
+  return `status line: installed in ${r.settings} (restart Claude Code to see it; remove with: agy-foreman statusline --uninstall)`;
 }
 
 /** Reads all of stdin, giving up after `ms` (Claude Code closes it; a terminal never would). */
@@ -367,20 +367,18 @@ export async function main(argv: string[], io: Io): Promise<number> {
   }
 
   if (cmd === "init") {
-    const targetFile = path.join(io.cwd, ".agy-orchestrator.json");
+    const targetFile = path.join(io.cwd, ".agy-foreman.json");
     if (existsSync(targetFile)) {
-      io.err(".agy-orchestrator.json already exists");
+      io.err(".agy-foreman.json already exists");
       return 1;
     }
     const detected = detectTestCommand(io.cwd);
     writeFileSync(targetFile, JSON.stringify(detected, null, 2) + "\n", "utf8");
-    io.out(
-      "Register with Claude Code:\n  claude mcp add agy-orchestrator -- npx -y agy-orchestrator serve",
-    );
+    io.out("Register with Claude Code:\n  claude mcp add agy-foreman -- npx -y agy-foreman serve");
     // The status line is on by default; it only touches Claude Code settings when a home dir is known.
     if (
       !argv.includes("--no-statusline") &&
-      (io.env.AGYO_CLAUDE_SETTINGS || io.env.USERPROFILE || io.env.HOME)
+      (io.env.FOREMAN_CLAUDE_SETTINGS || io.env.USERPROFILE || io.env.HOME)
     ) {
       io.out(
         describeInstall(await installStatusLine({ ...statusLineFiles(io.env), entry: cliEntry() })),
@@ -404,7 +402,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
   }
 
   if (cmd === "install-skill") {
-    let srcDir = io.env.AGYO_SKILL_SRC;
+    let srcDir = io.env.FOREMAN_SKILL_SRC;
     if (!srcDir) {
       const candidate = path.resolve(
         path.dirname(fileURLToPath(import.meta.url)),

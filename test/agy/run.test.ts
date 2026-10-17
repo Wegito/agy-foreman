@@ -7,7 +7,7 @@ import { isAlive } from "../../src/agy/kill.js";
 import type { StreamEvent } from "../../src/agy/types.js";
 import { fixture, waitFor } from "../helpers.js";
 
-const tmp = () => mkdtempSync(path.join(os.tmpdir(), "agyo-run-"));
+const tmp = () => mkdtempSync(path.join(os.tmpdir(), "foreman-run-"));
 
 function req(
   scenario: string,

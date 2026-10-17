@@ -4,7 +4,7 @@ import { z } from "zod";
 
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
-export const CONFIG_FILE = ".agy-orchestrator.json";
+export const CONFIG_FILE = ".agy-foreman.json";
 
 export class ConfigError extends Error {
   constructor(message: string) {

@@ -38,7 +38,7 @@ function envelope(
 function setup(
   o: { approver?: FakeApprover; result?: (spec: JobSpec) => Envelope; config?: object } = {},
 ) {
-  const state = mkdtempSync(path.join(os.tmpdir(), "agyo-mgr-"));
+  const state = mkdtempSync(path.join(os.tmpdir(), "foreman-mgr-"));
   const repo = makeRepo({ "a.txt": "a" });
   const specs: JobSpec[] = [];
   const approver = o.approver ?? new FakeApprover();
@@ -87,7 +87,7 @@ describe("JobManager.start", () => {
     });
     expect(r).toMatchObject({
       state: "running",
-      waitHint: expect.stringMatching(/^agy-orchestrator wait t-/),
+      waitHint: expect.stringMatching(/^agy-foreman wait t-/),
     });
     await m.idle();
     const rec = await m.get((r as { jobId: string }).jobId);

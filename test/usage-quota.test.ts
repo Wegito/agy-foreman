@@ -25,7 +25,7 @@ describe("parseUsage", () => {
 // each agy call boots the user's agy MCP servers, which flashed console windows on Windows.
 describe("startQuotaRefresher", () => {
   const setup = (active: boolean) => {
-    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-quota-")), "quota.json");
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-quota-")), "quota.json");
     let t = NOW.getTime();
     let calls = 0;
     const r = startQuotaRefresher({

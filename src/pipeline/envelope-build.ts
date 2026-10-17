@@ -10,7 +10,7 @@ export function fenceUntrusted(text: string, nonce: string): string {
 }
 
 export function getDeniedCommands(worktreePath: string): string[] {
-  const reviewFile = path.join(worktreePath, ".agents", "agyo-review.jsonl");
+  const reviewFile = path.join(worktreePath, ".agents", "foreman-review.jsonl");
   if (!existsSync(reviewFile)) return [];
   try {
     const lines = readFileSync(reviewFile, "utf8").trim().split(/\r?\n/).filter(Boolean);

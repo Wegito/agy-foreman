@@ -1,6 +1,6 @@
 # Known Issues & Workarounds
 
-This table documents live-verified quirks, bugs, and edge cases encountered when running the official Antigravity CLI (`agy`) in headless mode, along with the source of each finding and how `agy-orchestrator` mitigates it.
+This table documents live-verified quirks, bugs, and edge cases encountered when running the official Antigravity CLI (`agy`) in headless mode, along with the source of each finding and how `agy-foreman` mitigates it.
 
 ## Live-Verified Issues with Sources
 

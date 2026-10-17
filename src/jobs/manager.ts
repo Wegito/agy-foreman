@@ -157,7 +157,7 @@ export class JobManager {
     return {
       state,
       jobId: record.id,
-      waitHint: `agy-orchestrator wait ${record.id}`,
+      waitHint: `agy-foreman wait ${record.id}`,
       lessonsInjected,
     };
   }

@@ -13,8 +13,8 @@ function skill(root: string, name: string, body = "Use the Edit tool to change f
 }
 
 describe("skills", () => {
-  const repo = mkdtempSync(path.join(os.tmpdir(), "agyo-skrepo-"));
-  const home = mkdtempSync(path.join(os.tmpdir(), "agyo-skhome-"));
+  const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-skrepo-"));
+  const home = mkdtempSync(path.join(os.tmpdir(), "foreman-skhome-"));
   skill(path.join(repo, ".claude/skills"), "tdd");
   skill(path.join(home, ".claude/skills"), "tdd", "home version");
   skill(path.join(home, ".claude/skills"), "fastapi", "plain");
@@ -32,7 +32,7 @@ describe("skills", () => {
   it("accepts explicit paths inside a root and rejects escapes and unknown names", async () => {
     const [s] = await resolveSkills(["~/.claude/skills/fastapi"], roots, { repoRoot: repo, home });
     expect(s.name).toBe("fastapi");
-    const outside = mkdtempSync(path.join(os.tmpdir(), "agyo-out-"));
+    const outside = mkdtempSync(path.join(os.tmpdir(), "foreman-out-"));
     skill(outside, "evil");
     await expect(
       resolveSkills([path.join(outside, "evil")], roots, { repoRoot: repo, home }),
@@ -43,7 +43,7 @@ describe("skills", () => {
   });
 
   it("installs into .agents/skills of the worktree", async () => {
-    const wt = mkdtempSync(path.join(os.tmpdir(), "agyo-skwt-"));
+    const wt = mkdtempSync(path.join(os.tmpdir(), "foreman-skwt-"));
     await installSkills(wt, await resolveSkills(["tdd"], roots, { repoRoot: repo, home }));
     expect(existsSync(path.join(wt, ".agents", "skills", "tdd", "SKILL.md"))).toBe(true);
   });

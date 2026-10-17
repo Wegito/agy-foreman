@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 export function makeRepo(files: Record<string, string>): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "agyo-repo-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "foreman-repo-"));
   const g = (...a: string[]) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   g("init", "-q", "-b", "main");
   g("config", "user.name", "Test");
@@ -21,5 +21,5 @@ export function makeRepo(files: Record<string, string>): string {
 }
 
 export function tmpRoot(): string {
-  return mkdtempSync(path.join(os.tmpdir(), "agyo-wt-"));
+  return mkdtempSync(path.join(os.tmpdir(), "foreman-wt-"));
 }

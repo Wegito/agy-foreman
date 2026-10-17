@@ -14,7 +14,7 @@ import { jobsDir, stateDir, worktreeRoot } from "./paths.js";
 import { runJob } from "./pipeline/index.js";
 
 export function hookBundlePath(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), "agyo-hook.js");
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "foreman-hook.js");
 }
 
 export function createRuntime(o: {
@@ -67,7 +67,7 @@ export function createRuntime(o: {
     loadConfig: (repoRoot: string) => loadConfig({ repoRoot, env: o.env }),
     now: () => new Date(),
     lessons: (repoRoot: string) => ({
-      project: new LessonStore(path.join(repoRoot, ".agy-orchestrator", "lessons.json")),
+      project: new LessonStore(path.join(repoRoot, ".agy-foreman", "lessons.json")),
       global: new LessonStore(path.join(sDir, "lessons.json")),
     }),
     skillDir: (repoRoot: string) => {

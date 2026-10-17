@@ -15,7 +15,7 @@ import { makeRepo, tmpRoot } from "../pipeline/repo.js";
 const EST = { directTokens: 20000, delegateOverheadTokens: 4000, reason: "multi-file" };
 
 function setup(o: { approver?: FakeApprover; state?: Envelope["state"]; skill?: boolean } = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "agyo-learn-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "foreman-learn-"));
   const repo = makeRepo({ "a.txt": "a" });
   const specs: JobSpec[] = [];
   const approver = o.approver ?? new FakeApprover();

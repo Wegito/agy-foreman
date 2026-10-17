@@ -169,7 +169,7 @@ export async function handleAct(
             rec.envelope.verify.counts.errors
           : 0;
       const total = rec.envelope.verify?.counts?.tests ?? 0;
-      const commitMsg = `${rec.title}\n\nImplemented-by: ${rec.envelope.model} via agy-orchestrator\nVerified: ${passed}/${total} tests`;
+      const commitMsg = `${rec.title}\n\nImplemented-by: ${rec.envelope.model} via agy-foreman\nVerified: ${passed}/${total} tests`;
       await git(["commit", "-m", commitMsg], rec.repoRoot);
       const commit = (await git(["rev-parse", "HEAD"], rec.repoRoot)).trim();
       await removeWorktree(wt, { deleteBranch: true });

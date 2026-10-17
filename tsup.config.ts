@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    "agyo-hook": "src/pipeline/hook-entry.ts",
+    "foreman-hook": "src/pipeline/hook-entry.ts",
     statusline: "src/statusline-main.ts",
   },
   format: ["esm"],

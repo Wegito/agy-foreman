@@ -7,7 +7,7 @@ import { installGate, HOOK_COMMAND, type GatePolicy } from "../../src/pipeline/g
 
 function runHook(agentsDir: string, input: string): unknown {
   return JSON.parse(
-    execFileSync(process.execPath, ["agyo-hook.mjs"], {
+    execFileSync(process.execPath, ["foreman-hook.mjs"], {
       cwd: agentsDir,
       input,
       encoding: "utf8",
@@ -16,7 +16,7 @@ function runHook(agentsDir: string, input: string): unknown {
 }
 
 describe("installGate + bundled hook", () => {
-  const wt = mkdtempSync(path.join(os.tmpdir(), "agyo-hookwt-"));
+  const wt = mkdtempSync(path.join(os.tmpdir(), "foreman-hookwt-"));
   const policy: GatePolicy = {
     mode: "implement",
     worktree: wt,
@@ -31,10 +31,10 @@ describe("installGate + bundled hook", () => {
   it("installs hooks.json with the quote-free command, policy and script", async () => {
     await installGate(wt, policy, inject("hookBundle"));
     const hooks = JSON.parse(readFileSync(path.join(wt, ".agents", "hooks.json"), "utf8"));
-    expect(hooks["agyo-gate"].PreToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
-    expect(HOOK_COMMAND).toBe("node agyo-hook.mjs");
+    expect(hooks["foreman-gate"].PreToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
+    expect(HOOK_COMMAND).toBe("node foreman-hook.mjs");
     expect(
-      JSON.parse(readFileSync(path.join(wt, ".agents", "agyo-policy.json"), "utf8")).worktree,
+      JSON.parse(readFileSync(path.join(wt, ".agents", "foreman-policy.json"), "utf8")).worktree,
     ).toBe(wt);
   });
 
@@ -48,7 +48,7 @@ describe("installGate + bundled hook", () => {
     expect(
       runHook(dir, call("write_to_file", { TargetFile: path.join(wt, "tests", "x.ts") })),
     ).toMatchObject({ decision: "deny" });
-    const log = readFileSync(path.join(dir, "agyo-review.jsonl"), "utf8")
+    const log = readFileSync(path.join(dir, "foreman-review.jsonl"), "utf8")
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l));
@@ -59,12 +59,12 @@ describe("installGate + bundled hook", () => {
   it("fails closed on garbage input", () => {
     expect(runHook(path.join(wt, ".agents"), "not json")).toMatchObject({
       decision: "deny",
-      reason: expect.stringMatching(/agyo gate error/),
+      reason: expect.stringMatching(/foreman gate error/),
     });
   });
 
   it("merges into an existing hooks.json", async () => {
-    const wt2 = mkdtempSync(path.join(os.tmpdir(), "agyo-hookwt2-"));
+    const wt2 = mkdtempSync(path.join(os.tmpdir(), "foreman-hookwt2-"));
     mkdirSync(path.join(wt2, ".agents"));
     writeFileSync(
       path.join(wt2, ".agents", "hooks.json"),
@@ -72,6 +72,6 @@ describe("installGate + bundled hook", () => {
     );
     await installGate(wt2, { ...policy, worktree: wt2 }, inject("hookBundle"));
     const hooks = JSON.parse(readFileSync(path.join(wt2, ".agents", "hooks.json"), "utf8"));
-    expect(Object.keys(hooks).sort()).toEqual(["agyo-gate", "repo-lint"]);
+    expect(Object.keys(hooks).sort()).toEqual(["foreman-gate", "repo-lint"]);
   });
 });

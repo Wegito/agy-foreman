@@ -1,4 +1,4 @@
-# Agent Instructions for agy-orchestrator
+# Agent Instructions for agy-foreman
 
 This document provides instructions for coding agents and orchestrators operating in environments without native skill support.
 
@@ -30,7 +30,7 @@ When delegating coding tasks or implementation steps to Gemini 3.8 Flash, refer 
 After invoking `agy_start`, do not poll `agy_get` in a tight foreground loop. Instead, run:
 
 ```bash
-agy-orchestrator wait <job_id>
+agy-foreman wait <job_id>
 ```
 
 as a background command (`run_in_background: true`), and wait for process completion.

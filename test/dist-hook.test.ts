@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // copied alone into a worktree could not load and every tool call was denied.
 describe("built hook bundle", () => {
   it("is self-contained and decides tool calls when copied alone", () => {
-    const out = mkdtempSync(path.join(os.tmpdir(), "agyo-dist-"));
+    const out = mkdtempSync(path.join(os.tmpdir(), "foreman-dist-"));
     execFileSync(
       process.execPath,
       [path.join(root, "node_modules", "tsup", "dist", "cli-default.js"), "--out-dir", out],
@@ -20,17 +20,17 @@ describe("built hook bundle", () => {
         stdio: "pipe",
       },
     );
-    const hook = readFileSync(path.join(out, "agyo-hook.js"), "utf8");
+    const hook = readFileSync(path.join(out, "foreman-hook.js"), "utf8");
     expect(hook).not.toMatch(/from\s+["']\.\.?\//);
 
-    const agents = path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-iso-")), ".agents");
+    const agents = path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-iso-")), ".agents");
     execFileSync(process.execPath, [
       "-e",
       `require("node:fs").mkdirSync(${JSON.stringify(agents)})`,
     ]);
-    copyFileSync(path.join(out, "agyo-hook.js"), path.join(agents, "agyo-hook.mjs"));
+    copyFileSync(path.join(out, "foreman-hook.js"), path.join(agents, "foreman-hook.mjs"));
     writeFileSync(
-      path.join(agents, "agyo-policy.json"),
+      path.join(agents, "foreman-policy.json"),
       JSON.stringify({
         mode: "implement",
         worktree: path.dirname(agents),
@@ -44,7 +44,7 @@ describe("built hook bundle", () => {
     );
     const decide = (name: string, args: object) =>
       JSON.parse(
-        execFileSync(process.execPath, ["agyo-hook.mjs"], {
+        execFileSync(process.execPath, ["foreman-hook.mjs"], {
           cwd: agents,
           input: JSON.stringify({ toolCall: { name, args } }),
           encoding: "utf8",

@@ -36,7 +36,7 @@ describe("gemini-delegation skill", () => {
       "contract test",
       "estimate",
       "once per plan",
-      "agy-orchestrator wait",
+      "agy-foreman wait",
       "Continue without Gemini",
       "two strikes",
       "grep",

@@ -51,7 +51,7 @@ describe("isTerminal", () => {
 
 describe("JobStore", () => {
   it("writes atomically, reads back and lists newest first", async () => {
-    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-store-")), "jobs");
+    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-store-")), "jobs");
     const s = new JobStore(dir);
     await s.write(rec("t-a", "2026-10-17T10:00:00Z"));
     await s.write(rec("t-b", "2026-10-17T11:00:00Z"));

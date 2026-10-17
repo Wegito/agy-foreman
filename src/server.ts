@@ -38,7 +38,7 @@ export class ElicitationApprover implements Approver {
   async promote(c: PromoteCard): Promise<boolean> {
     if (!this.server.server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
-        "client does not support approval cards; set gate: client in .agy-orchestrator.json",
+        "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
     }
     return this.confirm(promoteCardText(c));
@@ -47,7 +47,7 @@ export class ElicitationApprover implements Approver {
   async plan(c: PlanCard): Promise<boolean> {
     if (!this.server.server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
-        "client does not support approval cards; set gate: client in .agy-orchestrator.json",
+        "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
     }
     return this.confirm(planCardText(c));
@@ -98,7 +98,7 @@ export class ElicitationApprover implements Approver {
   async task(c: TaskCard): Promise<boolean> {
     if (!this.server.server.getClientCapabilities()?.elicitation) {
       throw new ApprovalUnavailable(
-        "client does not support approval cards; set gate: client in .agy-orchestrator.json",
+        "client does not support approval cards; set gate: client in .agy-foreman.json",
       );
     }
     return this.confirm(taskCardText(c));
@@ -143,7 +143,7 @@ export function createServer(
   o: { defaultRepoRoot: () => string; version: string },
 ): McpServer {
   const server = new McpServer({
-    name: "agy-orchestrator",
+    name: "agy-foreman",
     version: o.version,
   });
 

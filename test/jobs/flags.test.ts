@@ -7,7 +7,7 @@ import { FlagStore, hashPlan, validGrant, type Flags } from "../../src/jobs/flag
 describe("flags", () => {
   it("defaults, updates atomically and serializes concurrent updates", async () => {
     const fs = new FlagStore(
-      path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-flags-")), "flags.json"),
+      path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-flags-")), "flags.json"),
     );
     expect(await fs.read()).toEqual({ delegationPaused: false, grants: [] });
     await Promise.all(

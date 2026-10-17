@@ -22,7 +22,7 @@ export interface ToolCall {
   args: Record<string, unknown>;
 }
 
-export const HOOK_COMMAND = "node agyo-hook.mjs";
+export const HOOK_COMMAND = "node foreman-hook.mjs";
 
 export function globToRegExp(glob: string): RegExp {
   const g = glob.replace(/\\/g, "/");
@@ -298,8 +298,12 @@ export async function installGate(
   const agentsDir = path.join(worktree, ".agents");
   mkdirSync(agentsDir, { recursive: true });
 
-  copyFileSync(hookBundlePath, path.join(agentsDir, "agyo-hook.mjs"));
-  writeFileSync(path.join(agentsDir, "agyo-policy.json"), JSON.stringify(policy, null, 2), "utf8");
+  copyFileSync(hookBundlePath, path.join(agentsDir, "foreman-hook.mjs"));
+  writeFileSync(
+    path.join(agentsDir, "foreman-policy.json"),
+    JSON.stringify(policy, null, 2),
+    "utf8",
+  );
 
   const hooksPath = path.join(agentsDir, "hooks.json");
   let existingHooks: Record<string, unknown> = {};
@@ -311,7 +315,7 @@ export async function installGate(
     }
   }
 
-  existingHooks["agyo-gate"] = {
+  existingHooks["foreman-gate"] = {
     PreToolUse: [
       {
         matcher: "*",

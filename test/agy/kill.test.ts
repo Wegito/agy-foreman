@@ -69,7 +69,7 @@ describe("treeSpawnOptions", () => {
 
 describe("killTree (integration)", () => {
   it("kills a parent and its grandchild", async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "agyo-kill-"));
+    const dir = mkdtempSync(path.join(os.tmpdir(), "foreman-kill-"));
     const pidFile = path.join(dir, "gc.pid");
     const parent = spawn(process.execPath, [fixture("tree-parent.mjs"), pidFile], {
       stdio: "ignore",

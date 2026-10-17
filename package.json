@@ -1,10 +1,10 @@
 {
-  "name": "agy-orchestrator",
+  "name": "agy-foreman",
   "version": "0.0.1",
   "description": "Verified, approval-gated delegation from Claude Code (or any MCP agent) to Gemini 3.8 Flash via the Antigravity CLI.",
   "type": "module",
   "bin": {
-    "agy-orchestrator": "dist/index.js"
+    "agy-foreman": "dist/index.js"
   },
   "files": [
     "dist",

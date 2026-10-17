@@ -7,7 +7,7 @@ export interface PathEnv {
   home: string;
 }
 
-const APP = "agy-orchestrator";
+const APP = "agy-foreman";
 
 function resolveEnv(p: Partial<PathEnv> = {}): PathEnv {
   return {
@@ -23,7 +23,7 @@ function joinFor(platform: NodeJS.Platform) {
 
 export function stateDir(p?: Partial<PathEnv>): string {
   const { platform, env, home } = resolveEnv(p);
-  if (env.AGYO_STATE_DIR) return env.AGYO_STATE_DIR;
+  if (env.FOREMAN_STATE_DIR) return env.FOREMAN_STATE_DIR;
   const join = joinFor(platform);
   if (platform === "win32") return join(env.LOCALAPPDATA || join(home, "AppData", "Local"), APP);
   if (platform === "darwin") return join(home, "Library", "Application Support", APP);

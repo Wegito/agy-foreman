@@ -122,7 +122,7 @@ let emptyHooksDir: string | null = null;
 
 function getEmptyHooksDir(): string {
   if (!emptyHooksDir) {
-    emptyHooksDir = mkdtempSync(path.join(os.tmpdir(), "agyo-empty-hooks-"));
+    emptyHooksDir = mkdtempSync(path.join(os.tmpdir(), "foreman-empty-hooks-"));
   }
   return emptyHooksDir;
 }

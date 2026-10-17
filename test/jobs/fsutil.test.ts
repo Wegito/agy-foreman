@@ -23,7 +23,7 @@ describe("concurrent job writes", () => {
   });
 
   it("survives many overlapping writes and concurrent readers of the same job", async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "agyo-conc-"));
+    const dir = mkdtempSync(path.join(os.tmpdir(), "foreman-conc-"));
     const s = new JobStore(dir);
     const rec = (n: number): JobRecord => ({
       id: "t-x",

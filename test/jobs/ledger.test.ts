@@ -17,7 +17,7 @@ const e = (o: Partial<LedgerEntry>): LedgerEntry => ({
 describe("Ledger", () => {
   it("appends, reads, and computes medians, calibration and stats", async () => {
     const l = new Ledger(
-      path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-led-")), "ledger.jsonl"),
+      path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-led-")), "ledger.jsonl"),
     );
     expect(await l.medianRunSec("implement")).toBeUndefined();
     expect(await l.calibration()).toEqual({ samples: 0 });

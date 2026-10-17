@@ -1,11 +1,11 @@
 ---
 name: gemini-delegation
-description: Delegate well-specified, test-verifiable coding work to Gemini 3.8 Flash through the agy-orchestrator MCP tools (agy_start, agy_get, agy_act, agy_status), and review the verified result. Use when executing implementation plans, bulk mechanical changes or large-codebase exploration where a machine check exists. Do not use for design decisions, small edits or tasks without tests.
+description: Delegate well-specified, test-verifiable coding work to Gemini 3.8 Flash through the agy-foreman MCP tools (agy_start, agy_get, agy_act, agy_status), and review the verified result. Use when executing implementation plans, bulk mechanical changes or large-codebase exploration where a machine check exists. Do not use for design decisions, small edits or tasks without tests.
 ---
 
 # Gemini Delegation Skill
 
-Delegate well-specified, machine-verifiable coding work to Gemini 3.8 Flash in headless mode via `agy-orchestrator`.
+Delegate well-specified, machine-verifiable coding work to Gemini 3.8 Flash in headless mode via `agy-foreman`.
 The orchestrator writes contract tests up front, isolates work in an external git worktree, and reviews the server-verified result.
 
 ## The 4 Tools & When to Call Them
@@ -26,7 +26,7 @@ The orchestrator writes contract tests up front, isolates work in an external gi
 
 1. **Approval Once per Plan**: For plan runs (`plan: { file, step }`), the user approves once per plan on the first delegated step. Subsequent steps proceed without approval cards as long as the plan file hash matches. Ad-hoc tasks show a per-task card.
 2. **Contract Tests First**: Every implementation task needs a machine check. Prefer orchestrator-written contract tests (`contract_tests`, or test code in the plan step): the server commits them on the base and they must fail there before Gemini starts. Existing tests that already cover the change also count. No check, no delegation.
-3. **Async Background Waiting**: Right after calling `agy_start`, launch `agy-orchestrator wait <job_id>` as a background command (`run_in_background: true`). End your turn immediately or work on unrelated tasks. Never poll in a foreground loop.
+3. **Async Background Waiting**: Right after calling `agy_start`, launch `agy-foreman wait <job_id>` as a background command (`run_in_background: true`). End your turn immediately or work on unrelated tasks. Never poll in a foreground loop.
 4. **Isolate Scope**: Do not edit files within the delegated task's scope in the host repository while Gemini is executing.
 5. **Two Strikes Rule**: If Flash fails the same task twice, take it back or split it into smaller tasks.
 6. **Never Delegate Grep or Trivial Changes**: Never delegate grep searches, regex queries, file listings, or small edits under 60 lines. Keep them on the orchestrator.
@@ -58,11 +58,11 @@ Step 2: Start with Plan & Contract Test
 
 Step 3: Wait in Background
   Run shell command in background:
-  `agy-orchestrator wait t-7f3a` (run_in_background: true)
+  `agy-foreman wait t-7f3a` (run_in_background: true)
   End turn and go idle, or do independent work.
 
 Step 4: Wake on Exit & Get Envelope
-  When `agy-orchestrator wait` exits, call `agy_get("t-7f3a")`.
+  When `agy-foreman wait` exits, call `agy_get("t-7f3a")`.
   Inspect the result envelope:
   - contract: { redOnBase: true, greenAfter: true }
   - verify: { passed: true, counts: { tests: 48, failures: 0 }, protectedRestored: [], tamper: [] }
@@ -89,5 +89,5 @@ Step 5: Review & Finalize (or Follow-up)
 - [Prompting & Brief Construction](references/prompting.md) - XML brief structure, rules, and avoiding pitfalls.
 - [Known Issues & Workarounds](references/known-issues.md) - Headless agy live-verified behaviors and safety mitigations.
 - [Reviewing Results](references/review.md) - Envelope inspection, verifying contract tests, untrusted reports, and diff checks.
-- [Async Execution](references/async.md) - Waiting with `agy-orchestrator wait`, background tasks, and concurrency.
+- [Async Execution](references/async.md) - Waiting with `agy-foreman wait`, background tasks, and concurrency.
 - [Lessons & Learning Loop](references/lessons.md) - Incident taxonomy, capturing lessons, and promoting to skills.

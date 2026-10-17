@@ -1,6 +1,6 @@
 # Lessons: The Continuous Learning Loop
 
-`agy-orchestrator` records every failure, timeout, scope violation, and task requiring follow-up as an incident. To prevent repeating the same mistake, the orchestrator reflects on incidents and records actionable lessons.
+`agy-foreman` records every failure, timeout, scope violation, and task requiring follow-up as an incident. To prevent repeating the same mistake, the orchestrator reflects on incidents and records actionable lessons.
 
 ## When to Record a Lesson
 
@@ -22,7 +22,7 @@ agy_act(job_id, "lesson", {
    - `implementer`: Information Gemini needs to succeed in future runs (e.g., file paths, module structures, preferred testing flags). These lessons are automatically injected into future `<lessons>` blocks in briefs.
    - `orchestrator`: Guidelines for the orchestrator regarding task routing, brief construction, and avoiding unfeasible delegations. Top orchestrator lessons are displayed in `agy_status()`.
 3. **Scope**:
-   - `project`: Stored in `<repo>/.agy-orchestrator/lessons.md`. Applicable specifically to the current codebase.
+   - `project`: Stored in `<repo>/.agy-foreman/lessons.md`. Applicable specifically to the current codebase.
    - `global`: Stored in user state directory. Applicable across all repositories and workspaces.
 
 ## Promotion to Skill References

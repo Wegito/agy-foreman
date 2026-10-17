@@ -1,10 +1,10 @@
 # Models: Gemini 3.8 Flash
 
-`agy-orchestrator` exclusively targets **Gemini 3.8 Flash**. Flash is universally available on consumer plans (including Google AI Pro promotional and trial tiers) and offers the most cost-effective token consumption against shared quota limits.
+`agy-foreman` exclusively targets **Gemini 3.8 Flash**. Flash is universally available on consumer plans (including Google AI Pro promotional and trial tiers) and offers the most cost-effective token consumption against shared quota limits.
 
 ## Supported Model Configurations
 
-The model slug is configured in `.agy-orchestrator.json` (default `gemini-3.8-flash-high`) and mapped to specific delegation scenarios:
+The model slug is configured in `.agy-foreman.json` (default `gemini-3.8-flash-high`) and mapped to specific delegation scenarios:
 
 | Setting                   | Effort           | Recommended Use                                                                                                 |
 | ------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |

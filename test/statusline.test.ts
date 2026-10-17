@@ -172,7 +172,7 @@ describe("quota and plan timer", () => {
 
 describe("recentJobs", () => {
   it("reads the newest records and skips broken files", async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "agyo-sl-"));
+    const dir = mkdtempSync(path.join(os.tmpdir(), "foreman-sl-"));
     const s = new JobStore(dir);
     await s.write(job({ id: "t-aaa" }));
     await s.write(job({ id: "t-bbb" }));
@@ -184,13 +184,13 @@ describe("recentJobs", () => {
 
 describe("install / uninstall", () => {
   const files = () => {
-    const d = mkdtempSync(path.join(os.tmpdir(), "agyo-set-"));
+    const d = mkdtempSync(path.join(os.tmpdir(), "foreman-set-"));
     return {
       settingsFile: path.join(d, ".claude", "settings.json"),
       wrapFile: path.join(d, "wrap.json"),
     };
   };
-  const entry = "C:\\x\\agy-orchestrator\\dist\\index.js";
+  const entry = "C:\\x\\agy-foreman\\dist\\index.js";
 
   it("installs into empty settings, keeps other keys, and is idempotent", async () => {
     const f = files();
@@ -198,7 +198,7 @@ describe("install / uninstall", () => {
     const s = JSON.parse(readFileSync(f.settingsFile, "utf8"));
     expect(s.statusLine).toEqual({
       type: "command",
-      command: 'node "C:/x/agy-orchestrator/dist/statusline.js"',
+      command: 'node "C:/x/agy-foreman/dist/statusline.js"',
       padding: 1,
       refreshInterval: 2,
     });
@@ -241,7 +241,7 @@ describe("install / uninstall", () => {
 
 describe("cli statusline", () => {
   it("prints the rendered line from the state dir without colors when NO_COLOR is set", async () => {
-    const state = mkdtempSync(path.join(os.tmpdir(), "agyo-slcli-"));
+    const state = mkdtempSync(path.join(os.tmpdir(), "foreman-slcli-"));
     await new JobStore(path.join(state, "jobs")).write(
       job({ id: "t-a", createdAt: new Date(Date.now() - 65_000).toISOString() }),
     );
@@ -249,7 +249,7 @@ describe("cli statusline", () => {
     const io: Io = {
       out: (s) => out.push(s),
       err: (s) => out.push(s),
-      env: { AGYO_STATE_DIR: state, NO_COLOR: "1" },
+      env: { FOREMAN_STATE_DIR: state, NO_COLOR: "1" },
       cwd: os.tmpdir(),
     };
     expect(await main(["statusline"], io)).toBe(0);
@@ -258,7 +258,7 @@ describe("cli statusline", () => {
     );
   });
   it("init does not touch Claude settings when no home is known", async () => {
-    const repo = mkdtempSync(path.join(os.tmpdir(), "agyo-init2-"));
+    const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init2-"));
     const out: string[] = [];
     expect(
       await main(["init"], {
@@ -271,12 +271,15 @@ describe("cli statusline", () => {
     expect(out.join("\n")).not.toContain("status line");
   });
   it("init installs the status line by default when settings are known", async () => {
-    const repo = mkdtempSync(path.join(os.tmpdir(), "agyo-init3-"));
-    const settings = path.join(mkdtempSync(path.join(os.tmpdir(), "agyo-set3-")), "settings.json");
+    const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init3-"));
+    const settings = path.join(
+      mkdtempSync(path.join(os.tmpdir(), "foreman-set3-")),
+      "settings.json",
+    );
     const out: string[] = [];
     const env = {
-      AGYO_CLAUDE_SETTINGS: settings,
-      AGYO_STATE_DIR: mkdtempSync(path.join(os.tmpdir(), "agyo-st3-")),
+      FOREMAN_CLAUDE_SETTINGS: settings,
+      FOREMAN_STATE_DIR: mkdtempSync(path.join(os.tmpdir(), "foreman-st3-")),
     };
     expect(
       await main(["init"], { out: (s) => out.push(s), err: (s) => out.push(s), env, cwd: repo }),

@@ -65,28 +65,28 @@ describe("waitExitCode and summaryLines", () => {
 
 describe("wait and watch", () => {
   it("waits for a terminal state and returns its exit code", async () => {
-    const state = mkdtempSync(path.join(os.tmpdir(), "agyo-cli-"));
+    const state = mkdtempSync(path.join(os.tmpdir(), "foreman-cli-"));
     const store = new JobStore(path.join(state, "jobs"));
     await store.write(rec("t-w", "running"));
     setTimeout(() => void store.write(rec("t-w", "quota")), 300);
-    const { i, out } = io({ AGYO_STATE_DIR: state });
+    const { i, out } = io({ FOREMAN_STATE_DIR: state });
     expect(await main(["wait", "t-w", "--timeout-sec", "10"], i)).toBe(2);
     expect(out.join("\n")).toContain("t-w quota");
   });
   it("times out and reports unknown jobs", async () => {
-    const state = mkdtempSync(path.join(os.tmpdir(), "agyo-cli-"));
+    const state = mkdtempSync(path.join(os.tmpdir(), "foreman-cli-"));
     await new JobStore(path.join(state, "jobs")).write(rec("t-s", "running"));
-    expect(await main(["wait", "t-s", "--timeout-sec", "1"], io({ AGYO_STATE_DIR: state }).i)).toBe(
-      3,
-    );
-    const u = io({ AGYO_STATE_DIR: state });
+    expect(
+      await main(["wait", "t-s", "--timeout-sec", "1"], io({ FOREMAN_STATE_DIR: state }).i),
+    ).toBe(3);
+    const u = io({ FOREMAN_STATE_DIR: state });
     expect(await main(["wait", "t-none", "--timeout-sec", "1"], u.i)).toBe(3);
     expect(u.out.concat(u.err).join("\n")).toContain("job not found");
   });
   it("watch --once prints one progress frame", async () => {
-    const state = mkdtempSync(path.join(os.tmpdir(), "agyo-cli-"));
+    const state = mkdtempSync(path.join(os.tmpdir(), "foreman-cli-"));
     await new JobStore(path.join(state, "jobs")).write(rec("t-p", "running"));
-    const { i, out } = io({ AGYO_STATE_DIR: state });
+    const { i, out } = io({ FOREMAN_STATE_DIR: state });
     expect(await main(["watch", "--once"], i)).toBe(0);
     expect(out.join("\n")).toMatch(/t-p .*40% · run/);
   });
@@ -94,7 +94,7 @@ describe("wait and watch", () => {
 
 describe("detectTestCommand and init", () => {
   it("detects npm, pytest and go projects", () => {
-    const npm = mkdtempSync(path.join(os.tmpdir(), "agyo-det-"));
+    const npm = mkdtempSync(path.join(os.tmpdir(), "foreman-det-"));
     writeFileSync(
       path.join(npm, "package.json"),
       JSON.stringify({ scripts: { test: "vitest run" } }),
@@ -104,30 +104,28 @@ describe("detectTestCommand and init", () => {
       test_command: ["npm", "test"],
       setup_command: ["npm", "ci"],
     });
-    const py = mkdtempSync(path.join(os.tmpdir(), "agyo-det-"));
+    const py = mkdtempSync(path.join(os.tmpdir(), "foreman-det-"));
     writeFileSync(path.join(py, "pyproject.toml"), "[project]\nname='x'\n");
     expect(detectTestCommand(py)).toEqual({
       test_command: ["python", "-m", "pytest", "-q", "--junitxml=reports/junit.xml"],
       test_report: "reports/junit.xml",
     });
-    const go = mkdtempSync(path.join(os.tmpdir(), "agyo-det-"));
+    const go = mkdtempSync(path.join(os.tmpdir(), "foreman-det-"));
     writeFileSync(path.join(go, "go.mod"), "module x\n");
     expect(detectTestCommand(go)).toEqual({ test_command: ["go", "test", "./..."] });
-    expect(detectTestCommand(mkdtempSync(path.join(os.tmpdir(), "agyo-det-")))).toEqual({});
+    expect(detectTestCommand(mkdtempSync(path.join(os.tmpdir(), "foreman-det-")))).toEqual({});
   });
   it("init writes the config once and prints the registration command", async () => {
-    const repo = mkdtempSync(path.join(os.tmpdir(), "agyo-init-"));
+    const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init-"));
     writeFileSync(path.join(repo, "go.mod"), "module x\n");
     const a = io({}, repo);
     expect(await main(["init"], a.i)).toBe(0);
-    expect(JSON.parse(readFileSync(path.join(repo, ".agy-orchestrator.json"), "utf8"))).toEqual({
+    expect(JSON.parse(readFileSync(path.join(repo, ".agy-foreman.json"), "utf8"))).toEqual({
       test_command: ["go", "test", "./..."],
     });
-    expect(a.out.join("\n")).toContain(
-      "claude mcp add agy-orchestrator -- npx -y agy-orchestrator serve",
-    );
+    expect(a.out.join("\n")).toContain("claude mcp add agy-foreman -- npx -y agy-foreman serve");
     expect(await main(["init"], io({}, repo).i)).toBe(1);
-    expect(existsSync(path.join(repo, ".agy-orchestrator.json"))).toBe(true);
+    expect(existsSync(path.join(repo, ".agy-foreman.json"))).toBe(true);
   });
 });
 
