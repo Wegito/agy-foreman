@@ -12,6 +12,14 @@ export interface BriefInput {
 
 export const RUN_PROMPT: string = "Execute the task described in .agy-task/brief.md.";
 
+/** Prompt for a resumed conversation: it remembers the previous worktree's brief, so name the new one. */
+export function resumePrompt(briefPath: string): string {
+  return (
+    `New instructions: read ${briefPath.replace(/\\/g, "/")} now. It replaces every earlier brief ` +
+    "and contains feedback on your previous attempt. Work only in this worktree and execute it."
+  );
+}
+
 export const EXPLORE_SCHEMA: Record<string, unknown> = {
   type: "object",
   required: ["summary", "citations"],

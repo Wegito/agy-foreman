@@ -148,6 +148,15 @@ describe("runJob implement", () => {
     expect(existsSync(path.join(env.worktreePath, ".agy-task", "setup.done"))).toBe(true);
   }, 60_000);
 
+  // Regression (found live): a followup without contract tests changed nothing and "passed".
+  it("fails an implement run that changes no file", async () => {
+    const { spec, deps } = setup("implement", { FAKE_AGY_EDITS: "{}" });
+    spec.contractTests = [];
+    const env = await runJob(spec, deps);
+    expect(env.state, env.diffStat).toBe("failed");
+    expect(env.reason).toMatch(/no changes/);
+  }, 60_000);
+
   it("stops with an error when setup_command fails", async () => {
     const { spec, deps } = setup("implement");
     spec.config = parseProjectConfig({

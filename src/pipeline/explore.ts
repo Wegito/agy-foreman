@@ -18,7 +18,7 @@ export async function runExploreJob(
   startTime: Date,
 ): Promise<Envelope> {
   const runResult = await gatedRun(spec, deps, startTime, {
-    mode: "plan",
+    agyMode: "plan",
     prompt: RUN_PROMPT,
     detached: true,
     jsonSchema: EXPLORE_SCHEMA,
@@ -36,7 +36,7 @@ export async function runExploreJob(
     return runResult;
   }
 
-  const { outcome, wt, guardEvents, skillsUsed, nonce } = runResult;
+  const { outcome, worktree: wt, guardEvents, skillsUsed, nonce } = runResult;
 
   try {
     // 4. report & check citations

@@ -1,12 +1,5 @@
 {
-  "test_command": [
-    "npx",
-    "vitest",
-    "run",
-    "--reporter=default",
-    "--reporter=junit",
-    "--outputFile.junit=reports/junit.xml"
-  ],
+  "test_command": ["npm", "run", "test:ci"],
   "test_report": "reports/junit.xml",
   "setup_command": ["npm", "ci", "--no-audit", "--no-fund"],
   "allowed_commands": [

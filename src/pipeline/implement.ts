@@ -56,13 +56,16 @@ export async function runImplementJob(
     allowedCommands.push(c);
   }
 
-  let contractInfo: { redOnBase: boolean; greenAfter: boolean } | undefined = undefined;
-  let baseline: TestCounts | undefined = undefined;
-  let snapshot: GitSnapshot | undefined = undefined;
+  // Narrowed once here: closures below (beforeRun) don't keep the guard's narrowing.
+  const testCommand: string[] = spec.config.testCommand;
+  // Assigned inside beforeRun; the casts stop TS from narrowing them to `undefined` here.
+  let contractInfo = undefined as { redOnBase: boolean; greenAfter: boolean } | undefined;
+  let baseline = undefined as TestCounts | undefined;
+  let snapshot = undefined as GitSnapshot | undefined;
   let startSha: string = "";
 
   const runResult = await gatedRun(spec, deps, startTime, {
-    mode: "accept-edits",
+    agyMode: "accept-edits",
     prompt: RUN_PROMPT,
     extraPolicySettings: {
       protectedGlobs: contractPaths,
@@ -107,7 +110,7 @@ export async function runImplementJob(
       deps.onPhase?.("contract");
       if (spec.contractTests && spec.contractTests.length > 0) {
         await addContractTests(wt, spec.contractTests);
-        const { red } = await redCheck(wt, spec.config.testCommand, spec.timeoutSec * 1000);
+        const { red } = await redCheck(wt, testCommand, spec.timeoutSec * 1000);
         if (!red) {
           return buildEnvelope(spec, deps, startTime, {
             state: "refused",
@@ -124,7 +127,7 @@ export async function runImplementJob(
       if (spec.config.testReport) {
         const reportPath = path.resolve(wt.path, spec.config.testReport);
         if (!existsSync(reportPath)) {
-          await runCommand(spec.config.testCommand, {
+          await runCommand(testCommand, {
             cwd: wt.path,
             timeoutMs: spec.timeoutSec * 1000,
           });
@@ -144,7 +147,7 @@ export async function runImplementJob(
     return runResult;
   }
 
-  const { outcome, wt, guardEvents, skillsUsed, nonce } = runResult;
+  const { outcome, worktree: wt, guardEvents, skillsUsed, nonce } = runResult;
 
   try {
     let jobState: JobState;
@@ -160,10 +163,12 @@ export async function runImplementJob(
     } else {
       // 5. verify (on success only)
       deps.onPhase?.("verify");
+      // beforeRun always takes the snapshot before agy runs.
+      if (!snapshot) throw new Error("internal: git snapshot missing before verify");
       verifyReport = await verify({
         wt,
         protectedGlobs: [...spec.config.protectedPaths, ...contractPaths],
-        testCommand: spec.config.testCommand,
+        testCommand,
         testReport: spec.config.testReport,
         baseline,
         snapshot,
@@ -197,6 +202,12 @@ export async function runImplementJob(
       stat = await diffStat(wt);
     } catch {
       stat = undefined;
+    }
+    // Found live: a followup (no contract tests) re-read a stale brief, changed nothing, and the
+    // unchanged suite "passed". An implement job that changes no file has not done its task.
+    if (jobState === "passed" && !stat?.trim()) {
+      jobState = "failed";
+      jobReason = "no changes: the run finished without changing any file";
     }
 
     let mergeResult: { clean: boolean; conflictingFiles: string[] } | undefined = undefined;

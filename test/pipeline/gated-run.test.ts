@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { runJob, type JobSpec, type PipelineDeps } from "../../src/pipeline/index.js";
 import { repoHash } from "../../src/pipeline/worktree.js";
+import { buildGatePolicy } from "../../src/pipeline/gated-run.js";
+import { decide } from "../../src/pipeline/gate.js";
+import { resumePrompt } from "../../src/pipeline/brief.js";
 import { parseProjectConfig, loadRuntimeConfig } from "../../src/config.js";
 import { makeRepo, tmpRoot } from "./repo.js";
 
@@ -61,4 +64,27 @@ describe("gated run", () => {
     expect(noTests.state).toBe("refused");
     expect(setupFailed.state).toBe("error");
   }, 60_000);
+});
+
+// Regression (found in review): the gate's mode came from agy's run mode ("plan"), so explore
+// jobs lost the gate's read-only rules.
+describe("buildGatePolicy", () => {
+  it("keeps explore jobs read-only whatever agy mode they run in", () => {
+    const { spec } = setup({});
+    expect(buildGatePolicy({ ...spec, kind: "explore" }, "/w").mode).toBe("explore");
+    expect(buildGatePolicy(spec, "/w").mode).toBe("implement");
+    const policy = buildGatePolicy({ ...spec, kind: "explore" }, "/w");
+    expect(
+      decide(policy, { name: "write_to_file", args: { TargetFile: "/w/a.ts" } }).decision,
+    ).toBe("deny");
+  });
+});
+
+// Regression (found live): a resumed followup re-read the previous worktree's brief.
+describe("resumePrompt", () => {
+  it("names the new brief explicitly", () => {
+    expect(resumePrompt(String.raw`C:\wt\t-2\.agy-task\brief.md`)).toContain(
+      "C:/wt/t-2/.agy-task/brief.md",
+    );
+  });
 });

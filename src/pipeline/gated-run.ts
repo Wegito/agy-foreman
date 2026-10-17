@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Outcome, StreamEvent } from "../agy/types.js";
-import { renderBrief, renderProgress, RUN_PROMPT, type BriefInput } from "./brief.js";
+import { renderBrief, renderProgress, resumePrompt, RUN_PROMPT, type BriefInput } from "./brief.js";
 import { installGate, type GatePolicy } from "./gate.js";
 import { makeGuard } from "./guard.js";
 import { installSkills, resolveSkills, SkillError, type ResolvedSkill } from "./skills.js";
@@ -19,7 +19,8 @@ export interface ExtraPolicySettings {
 
 export interface GatedRunOptions {
   prompt?: string;
-  mode?: "accept-edits" | "plan";
+  /** agy's run mode. The gate's own mode always follows spec.kind (see buildGatePolicy). */
+  agyMode?: "accept-edits" | "plan";
   briefText?: string | ((skills: ResolvedSkill[]) => string);
   extraPolicySettings?: ExtraPolicySettings;
   jsonSchema?: Record<string, unknown>;
@@ -32,7 +33,6 @@ export interface GatedRunOptions {
 export interface GatedRunOutput {
   outcome: Outcome;
   worktree: Worktree;
-  wt: Worktree;
   guardEvents: string[];
   skillsUsed: string[];
   nonce: string;
@@ -40,34 +40,30 @@ export interface GatedRunOutput {
 
 export type GatedRunResult = GatedRunOutput | Envelope;
 
+/** The gate policy for a job: explore jobs are read-only, whatever agy mode they run in. */
+export function buildGatePolicy(
+  spec: JobSpec,
+  worktreePath: string,
+  extra: ExtraPolicySettings = {},
+): GatePolicy {
+  return {
+    mode: spec.kind === "explore" ? "explore" : "implement",
+    worktree: worktreePath,
+    readOnlyDirs: extra.readOnlyDirs ?? [],
+    protectedGlobs: [...spec.config.protectedPaths, ...(extra.protectedGlobs ?? [])],
+    allowedCommands: [...(extra.allowedCommands ?? [])],
+    unknownCommands: spec.config.unknownCommands,
+    allowedMcp: spec.config.allowedMcp,
+    web: spec.config.web,
+  };
+}
+
 export async function gatedRun(
-  specOrOptions: JobSpec | (GatedRunOptions & { spec: JobSpec; deps: PipelineDeps; startTime: Date }),
-  depsMaybe?: PipelineDeps,
-  startTimeMaybe?: Date,
-  optionsMaybe?: GatedRunOptions,
+  spec: JobSpec,
+  deps: PipelineDeps,
+  startTime: Date,
+  options: GatedRunOptions = {},
 ): Promise<GatedRunResult> {
-  let spec: JobSpec;
-  let deps: PipelineDeps;
-  let startTime: Date;
-  let options: GatedRunOptions;
-
-  if (depsMaybe && startTimeMaybe) {
-    spec = specOrOptions as JobSpec;
-    deps = depsMaybe;
-    startTime = startTimeMaybe;
-    options = optionsMaybe ?? {};
-  } else {
-    const opts = specOrOptions as GatedRunOptions & {
-      spec: JobSpec;
-      deps: PipelineDeps;
-      startTime: Date;
-    };
-    spec = opts.spec;
-    deps = opts.deps;
-    startTime = opts.startTime;
-    options = opts;
-  }
-
   const wt = await createWorktree({
     repoRoot: spec.repoRoot,
     jobId: spec.jobId,
@@ -77,7 +73,12 @@ export async function gatedRun(
   });
 
   try {
-    await excludeInRepo(spec.repoRoot, [".agents/", ".agy-task/"]);
+    // The test report is generated output: keep it out of job commits (found live).
+    const report =
+      spec.config.testReport && !path.isAbsolute(spec.config.testReport)
+        ? [spec.config.testReport.replace(/\\/g, "/")]
+        : [];
+    await excludeInRepo(spec.repoRoot, [".agents/", ".agy-task/", ".agy-foreman/", ...report]);
     mkdirSync(path.join(wt.path, ".agy-task"), { recursive: true });
 
     if (options.beforeRun) {
@@ -157,21 +158,7 @@ export async function gatedRun(
       jsonSchemaPath = p;
     }
 
-    const policy: GatePolicy = {
-      mode: options.mode ?? (spec.kind === "explore" ? "explore" : "implement"),
-      worktree: wt.path,
-      readOnlyDirs: options.extraPolicySettings?.readOnlyDirs ?? [],
-      protectedGlobs: [
-        ...spec.config.protectedPaths,
-        ...(options.extraPolicySettings?.protectedGlobs ?? []),
-      ],
-      allowedCommands: [
-        ...(options.extraPolicySettings?.allowedCommands ?? []),
-      ],
-      unknownCommands: spec.config.unknownCommands,
-      allowedMcp: spec.config.allowedMcp,
-      web: spec.config.web,
-    };
+    const policy = buildGatePolicy(spec, wt.path, options.extraPolicySettings);
 
     await installGate(wt.path, policy, deps.hookBundlePath);
 
@@ -186,11 +173,14 @@ export async function gatedRun(
 
     const outcome = await deps.agyRun(
       {
-        prompt: options.prompt ?? RUN_PROMPT,
+        // A resumed conversation remembers the previous worktree's brief: point it at the new one.
+        prompt: spec.conversationId
+          ? resumePrompt(path.join(wt.path, ".agy-task", "brief.md"))
+          : (options.prompt ?? RUN_PROMPT),
         cwd: wt.path,
         model: spec.config.model,
         effort: spec.effort ?? spec.config.effort,
-        mode: options.mode ?? (spec.kind === "explore" ? "plan" : "accept-edits"),
+        mode: options.agyMode ?? (spec.kind === "explore" ? "plan" : "accept-edits"),
         jsonSchemaPath,
         timeoutSec: spec.timeoutSec,
         conversationId: spec.conversationId,
@@ -208,7 +198,6 @@ export async function gatedRun(
     return {
       outcome,
       worktree: wt,
-      wt,
       guardEvents,
       skillsUsed,
       nonce,

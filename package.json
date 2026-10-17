@@ -22,7 +22,8 @@
     "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:ci": "tsc --noEmit && vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml"
   },
   "keywords": [
     "mcp",
