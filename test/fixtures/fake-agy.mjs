@@ -1,7 +1,8 @@
 // Scenario-driven stand-in for `agy -p ... --output-format stream-json`.
 // Event shapes copied from a live agy 1.4.0 run. Inspired by claude-agy-mcp's fake-agy (MIT, (c) 2026 elkaix).
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -61,6 +62,57 @@ log("I1017 12:08:01.243347 server.go:1743] Language server version: 1.4.0 (fake)
 
 function main() {
   switch (scenario) {
+    case "implement": {
+      init();
+      const edits = JSON.parse(process.env.FAKE_AGY_EDITS ?? "{}");
+      let idx = 0;
+      for (const [relPath, content] of Object.entries(edits)) {
+        const fullPath = path.resolve(process.cwd(), relPath);
+        mkdirSync(path.dirname(fullPath), { recursive: true });
+        writeFileSync(fullPath, content);
+        step(idx++, {
+          step_type: "tool",
+          tool_name: "write_to_file",
+          tool_info: {
+            name: "write_to_file",
+            parameters: { TargetFile: fullPath },
+          },
+        });
+      }
+      result("SUCCESS", "implemented");
+      return;
+    }
+    case "tamper": {
+      init();
+      const edits = JSON.parse(process.env.FAKE_AGY_EDITS ?? "{}");
+      let idx = 0;
+      for (const [relPath, content] of Object.entries(edits)) {
+        const fullPath = path.resolve(process.cwd(), relPath);
+        mkdirSync(path.dirname(fullPath), { recursive: true });
+        writeFileSync(fullPath, content);
+        step(idx++, {
+          step_type: "tool",
+          tool_name: "write_to_file",
+          tool_info: {
+            name: "write_to_file",
+            parameters: { TargetFile: fullPath },
+          },
+        });
+      }
+      if (process.env.FAKE_AGY_TAMPER) {
+        const tamperPath = path.resolve(process.cwd(), process.env.FAKE_AGY_TAMPER);
+        mkdirSync(path.dirname(tamperPath), { recursive: true });
+        writeFileSync(tamperPath, "// tampered\n");
+      }
+      result("SUCCESS", "implemented");
+      return;
+    }
+    case "explore": {
+      init();
+      const json = JSON.parse(process.env.FAKE_AGY_EXPLORE ?? "{}");
+      result("SUCCESS", JSON.stringify(json), { structured_output: json });
+      return;
+    }
     case "success":
       init();
       step(0, { step_type: "user_input" });
