@@ -28,8 +28,9 @@ describe("parseProjectConfig", () => {
   });
 
   it("validates tool-gate settings", () => {
-    expect(parseProjectConfig({ allowed_mcp: ["github/*"], unknown_commands: "allow", web: true }))
-      .toMatchObject({ allowedMcp: ["github/*"], unknownCommands: "allow", web: true });
+    expect(
+      parseProjectConfig({ allowed_mcp: ["github/*"], unknown_commands: "allow", web: true }),
+    ).toMatchObject({ allowedMcp: ["github/*"], unknownCommands: "allow", web: true });
     expect(() => parseProjectConfig({ allowed_mcp: ["socraticode"] })).toThrow(ConfigError);
     expect(() => parseProjectConfig({ unknown_commands: "maybe" })).toThrow(ConfigError);
   });
@@ -75,7 +76,12 @@ describe("loadRuntimeConfig", () => {
   });
   it("reads agy path, sandbox and timeout", () => {
     const r = loadRuntimeConfig({ AGY_PATH: "/opt/agy", AGY_SANDBOX: "true", AGY_TIMEOUT: "90" });
-    expect(r).toEqual({ agyPath: "/opt/agy", skipPermissions: false, sandbox: true, defaultTimeoutSec: 90 });
+    expect(r).toEqual({
+      agyPath: "/opt/agy",
+      skipPermissions: false,
+      sandbox: true,
+      defaultTimeoutSec: 90,
+    });
   });
   it("falls back to 1800s for a bad timeout", () => {
     expect(loadRuntimeConfig({ AGY_TIMEOUT: "-3" }).defaultTimeoutSec).toBe(1800);
@@ -101,6 +107,8 @@ describe("loadConfig", () => {
     expect(cfg.project.model).toBe("gemini-3.8-flash-high");
   });
   it("reports invalid JSON as ConfigError", () => {
-    expect(() => loadConfig({ repoRoot: "/r", env: {}, readFile: () => "{nope" })).toThrow(ConfigError);
+    expect(() => loadConfig({ repoRoot: "/r", env: {}, readFile: () => "{nope" })).toThrow(
+      ConfigError,
+    );
   });
 });

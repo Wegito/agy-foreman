@@ -10,7 +10,11 @@ export interface PathEnv {
 const APP = "agy-orchestrator";
 
 function resolveEnv(p: Partial<PathEnv> = {}): PathEnv {
-  return { platform: p.platform ?? process.platform, env: p.env ?? process.env, home: p.home ?? os.homedir() };
+  return {
+    platform: p.platform ?? process.platform,
+    env: p.env ?? process.env,
+    home: p.home ?? os.homedir(),
+  };
 }
 
 function joinFor(platform: NodeJS.Platform) {
@@ -37,6 +41,7 @@ export function jobsDir(p?: Partial<PathEnv>): string {
 
 export function expandHome(input: string, home: string = os.homedir()): string {
   if (input === "~") return home;
-  if (input.startsWith("~/") || input.startsWith("~\\")) return path.join(home, input.slice(2)).replace(/\\/g, home.includes("\\") ? "\\" : "/");
+  if (input.startsWith("~/") || input.startsWith("~\\"))
+    return path.join(home, input.slice(2)).replace(/\\/g, home.includes("\\") ? "\\" : "/");
   return input;
 }

@@ -38,10 +38,14 @@ const projectSchema = z
     max_concurrent: z.number().int().min(1).max(8).default(2),
     max_runs_per_hour: z.number().int().min(1).default(10),
     refuse_ratio: z.number().min(1).default(1.5),
-    skill_roots: z.array(z.string().min(1)).default([".agents/skills", ".claude/skills", "~/.claude/skills"]),
+    skill_roots: z
+      .array(z.string().min(1))
+      .default([".agents/skills", ".claude/skills", "~/.claude/skills"]),
     allowed_commands: z.array(z.string().min(1)).default([]),
     unknown_commands: z.enum(["ask_user", "deny", "allow"]).default("deny"),
-    allowed_mcp: z.array(z.string().regex(/^[^/]+\/[^/]+$/, "use server/tool or server/*")).default([]),
+    allowed_mcp: z
+      .array(z.string().regex(/^[^/]+\/[^/]+$/, "use server/tool or server/*"))
+      .default([]),
     web: z.boolean().default(false),
   })
   .strict();
@@ -80,7 +84,10 @@ export function parseProjectConfig(raw: unknown): ProjectConfig {
   const parsed = projectSchema.safeParse(raw);
   if (!parsed.success) {
     const msg = parsed.error.issues
-      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}${"keys" in i ? ` ${(i as { keys: string[] }).keys.join(", ")}` : ""}`)
+      .map(
+        (i) =>
+          `${i.path.join(".") || "(root)"}: ${i.message}${"keys" in i ? ` ${(i as { keys: string[] }).keys.join(", ")}` : ""}`,
+      )
       .join("; ");
     throw new ConfigError(`Invalid ${CONFIG_FILE}: ${msg}`);
   }
@@ -109,7 +116,9 @@ function positiveInt(raw: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
-export function loadRuntimeConfig(env: Record<string, string | undefined> = process.env): RuntimeConfig {
+export function loadRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): RuntimeConfig {
   return {
     agyPath: env.AGY_PATH || "agy",
     skipPermissions: env.AGY_SKIP_PERMISSIONS === "true",
