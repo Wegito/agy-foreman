@@ -13,24 +13,20 @@ import type { JobManagerDeps } from "./manager.js";
 
 export interface ExecuteJobContext {
   deps: JobManagerDeps;
-  abortControllers: Map<string, AbortController>;
-  activeJobs: Set<string>;
-  queuedSpecs: Map<string, JobSpec>;
-  writeQueues: Map<string, Promise<void>>;
-  writeRecord: (record: JobRecord) => Promise<void>;
+  write: (record: JobRecord) => Promise<void>;
   startFollowup: (
     parent: JobRecord,
     feedback: string,
     bypassApproval: boolean,
   ) => Promise<{ state: "running" | "queued"; jobId: string }>;
-  drainQueue: () => Promise<void>;
-  checkIdle: () => void;
 }
 
-export function executeJob(ctx: ExecuteJobContext, record: JobRecord, spec: JobSpec): void {
-  const abortController = new AbortController();
-  ctx.abortControllers.set(record.id, abortController);
-
+export async function executeJob(
+  ctx: ExecuteJobContext,
+  record: JobRecord,
+  spec: JobSpec,
+  signal: AbortSignal,
+): Promise<void> {
   const jobStartTime = ctx.deps.now();
   let runStartTime: Date | undefined;
   let lastWriteTime = 0;
@@ -66,7 +62,7 @@ export function executeJob(ctx: ExecuteJobContext, record: JobRecord, spec: JobS
     record.progress.elapsedSec = elapsedSec;
     record.progress.etaSec = prog.etaSec;
     record.updatedAt = ctx.deps.now().toISOString();
-    await ctx.writeRecord(record);
+    await ctx.write(record);
   };
 
   const onPhase = (phase: "prepare" | "contract" | "brief" | "run" | "verify" | "report") => {
@@ -135,112 +131,103 @@ export function executeJob(ctx: ExecuteJobContext, record: JobRecord, spec: JobS
     }
   };
 
-  void (async () => {
-    let envelope: Envelope | undefined;
-    let runError: unknown;
-    try {
-      const pd: PipelineDeps = {
-        ...ctx.deps.pipelineDeps,
-        onPhase,
-        onEvent,
-        signal: abortController.signal,
-      };
-      envelope = await ctx.deps.runJob(spec, pd);
-    } catch (err) {
-      runError = err;
+  let envelope: Envelope | undefined;
+  let runError: unknown;
+  try {
+    const pd: PipelineDeps = {
+      ...ctx.deps.pipelineDeps,
+      onPhase,
+      onEvent,
+      signal,
+    };
+    envelope = await ctx.deps.runJob(spec, pd);
+  } catch (err) {
+    runError = err;
+  }
+
+  if (runError !== undefined) {
+    const reason = runError instanceof Error ? runError.message : String(runError);
+    record.state = "error";
+    record.progress.phase = "done";
+    record.progress.percent = 100;
+    record.progress.elapsedSec = (ctx.deps.now().getTime() - jobStartTime.getTime()) / 1000;
+    delete record.progress.etaSec;
+    record.updatedAt = ctx.deps.now().toISOString();
+    await ctx.write(record);
+    await ctx.deps.ledger.append({
+      jobId: record.id,
+      kind: record.kind,
+      state: "error",
+      durationSec: record.progress.elapsedSec,
+      estimate: record.estimate,
+      returnedTokens: 0,
+      at: ctx.deps.now().toISOString(),
+    });
+  } else if (envelope) {
+    const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
+    if (incident) {
+      record.incident = incident;
+    } else {
+      delete record.incident;
     }
+    record.envelope = envelope;
+    record.state = envelope.state;
+    record.progress.phase = "done";
+    record.progress.percent = 100;
+    record.progress.elapsedSec = envelope.durationSec;
+    delete record.progress.etaSec;
+    record.updatedAt = ctx.deps.now().toISOString();
+    await ctx.write(record);
 
-    if (runError !== undefined) {
-      const reason = runError instanceof Error ? runError.message : String(runError);
-      record.state = "error";
-      record.progress.phase = "done";
-      record.progress.percent = 100;
-      record.progress.elapsedSec = (ctx.deps.now().getTime() - jobStartTime.getTime()) / 1000;
-      delete record.progress.etaSec;
-      record.updatedAt = ctx.deps.now().toISOString();
-      await ctx.writeRecord(record);
-      await ctx.deps.ledger.append({
-        jobId: record.id,
-        kind: record.kind,
-        state: "error",
-        durationSec: record.progress.elapsedSec,
-        estimate: record.estimate,
-        returnedTokens: 0,
-        at: ctx.deps.now().toISOString(),
-      });
-    } else if (envelope) {
-      const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
-      if (incident) {
-        record.incident = incident;
-      } else {
-        delete record.incident;
-      }
-      record.envelope = envelope;
-      record.state = envelope.state;
-      record.progress.phase = "done";
-      record.progress.percent = 100;
-      record.progress.elapsedSec = envelope.durationSec;
-      delete record.progress.etaSec;
-      record.updatedAt = ctx.deps.now().toISOString();
-      await ctx.writeRecord(record);
+    const returnedTokens =
+      envelope.usage?.outputTokens ?? Math.round((envelope.untrustedReport?.length ?? 0) / 4);
+    await ctx.deps.ledger.append({
+      jobId: record.id,
+      kind: record.kind,
+      state: envelope.state,
+      durationSec: envelope.durationSec,
+      runSec: envelope.durationSec,
+      estimate: record.estimate,
+      returnedTokens,
+      usageTotal: envelope.usage?.totalTokens,
+      at: ctx.deps.now().toISOString(),
+      ...(incident ? { incident } : {}),
+    });
 
-      const returnedTokens =
-        envelope.usage?.outputTokens ?? Math.round((envelope.untrustedReport?.length ?? 0) / 4);
-      await ctx.deps.ledger.append({
-        jobId: record.id,
-        kind: record.kind,
-        state: envelope.state,
-        durationSec: envelope.durationSec,
-        runSec: envelope.durationSec,
-        estimate: record.estimate,
-        returnedTokens,
-        usageTotal: envelope.usage?.totalTokens,
-        at: ctx.deps.now().toISOString(),
-        ...(incident ? { incident } : {}),
+    if (envelope.state === "quota") {
+      const resetInSec = envelope.quota?.resetInSec ?? 900;
+      const cooldownSec = Math.max(60, resetInSec);
+      const cooldownUntil = new Date(ctx.deps.now().getTime() + cooldownSec * 1000).toISOString();
+      const cooldownText = envelope.quota?.resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
+      await ctx.deps.flags.update((f) => {
+        f.cooldownUntil = cooldownUntil;
+        f.cooldownText = cooldownText;
       });
 
-      if (envelope.state === "quota") {
-        const resetInSec = envelope.quota?.resetInSec ?? 900;
-        const cooldownSec = Math.max(60, resetInSec);
-        const cooldownUntil = new Date(ctx.deps.now().getTime() + cooldownSec * 1000).toISOString();
-        const cooldownText = envelope.quota?.resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
-        await ctx.deps.flags.update((f) => {
-          f.cooldownUntil = cooldownUntil;
-          f.cooldownText = cooldownText;
+      try {
+        const choice = await ctx.deps.approver.quota({
+          resetText: cooldownText,
+          resetAt: cooldownUntil,
+          pausedJobId: record.id,
         });
-
-        try {
-          const choice = await ctx.deps.approver.quota({
-            resetText: cooldownText,
-            resetAt: cooldownUntil,
-            pausedJobId: record.id,
+        if (choice === "retry") {
+          await ctx.deps.flags.update((f) => {
+            delete f.cooldownUntil;
+            delete f.cooldownText;
           });
-          if (choice === "retry") {
-            await ctx.deps.flags.update((f) => {
-              delete f.cooldownUntil;
-              delete f.cooldownText;
-            });
-            await ctx.startFollowup(
-              record,
-              "Continue the task; the previous run stopped at a usage limit.",
-              true,
-            );
-          } else if (choice === "continue_without") {
-            await ctx.deps.flags.update((f) => {
-              f.delegationPaused = true;
-            });
-          }
-        } catch {
-          // ignore
+          await ctx.startFollowup(
+            record,
+            "Continue the task; the previous run stopped at a usage limit.",
+            true,
+          );
+        } else if (choice === "continue_without") {
+          await ctx.deps.flags.update((f) => {
+            f.delegationPaused = true;
+          });
         }
+      } catch {
+        // ignore
       }
     }
-
-    ctx.abortControllers.delete(record.id);
-    ctx.activeJobs.delete(record.id);
-    ctx.queuedSpecs.delete(record.id);
-    ctx.writeQueues.delete(record.id);
-    await ctx.drainQueue();
-    ctx.checkIdle();
-  })();
+  }
 }

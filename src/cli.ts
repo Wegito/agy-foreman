@@ -262,6 +262,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
               path.join(stateDir({ env: io.env }), "approvals.jsonl"),
             ),
     });
+    await runtime.manager.recoverOrphans();
     server = createServer(runtime.manager, {
       defaultRepoRoot: () => io.cwd,
       version: "0.0.1",

@@ -8,16 +8,12 @@ import { ClientModeApprover, type PromoteCard } from "./approver.js";
 import { hashPlan, validGrant } from "./flags.js";
 import { LessonError, tagsFor, type Lesson } from "./lessons.js";
 import { emptyProgress, isTerminal, newJobId, type JobRecord } from "./store.js";
-import { canRunJob } from "./helpers.js";
+import type { JobScheduler } from "./scheduler.js";
 import type { ActInput, JobManagerDeps } from "./manager.js";
 
 export interface ActionsContext {
   deps: JobManagerDeps;
-  abortControllers: Map<string, AbortController>;
-  activeJobs: Set<string>;
-  queuedSpecs: Map<string, JobSpec>;
-  writeRecord: (record: JobRecord) => Promise<void>;
-  executeJob: (record: JobRecord, spec: JobSpec) => void;
+  scheduler: JobScheduler;
 }
 
 export async function startFollowup(
@@ -87,21 +83,7 @@ export async function startFollowup(
     runtime: config.runtime,
   };
 
-  ctx.queuedSpecs.set(newId, spec);
-  ctx.activeJobs.add(newId);
-
-  const allJobs = await ctx.deps.store.list();
-  const state: "running" | "queued" = canRunJob(allJobs, parent.repoRoot, config, ctx.deps.now())
-    ? "running"
-    : "queued";
-
-  newRec.state = state;
-  await ctx.writeRecord(newRec);
-
-  if (state === "running") {
-    ctx.executeJob(newRec, spec);
-  }
-
+  const state = await ctx.scheduler.submit(newRec, spec);
   return { state, jobId: newId };
 }
 
@@ -187,10 +169,7 @@ export async function handleAct(
   }
 
   if (i.action === "cancel") {
-    const controller = ctx.abortControllers.get(i.jobId);
-    if (controller) {
-      controller.abort();
-    }
+    await ctx.scheduler.cancel(i.jobId);
     return { state: "cancelling" };
   }
 

@@ -52,6 +52,8 @@ export interface JobRecord {
   envelope?: Envelope;
   returnedChars: number;
   incident?: Incident;
+  errorReason?: string;
+  ownerPid?: number;
 }
 
 export function isTerminal(state: RecordState): boolean {

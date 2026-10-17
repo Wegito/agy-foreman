@@ -1,6 +1,4 @@
-// Small pure helpers for job records, checklist extraction, and path comparisons.
 import path from "node:path";
-import type { Config } from "../config.js";
 import type { JobRecord } from "./store.js";
 
 export function isSamePath(p1: string, p2: string): boolean {
@@ -46,21 +44,4 @@ export function compactRecord(rec: JobRecord): JobRecord {
       untrustedReport: report,
     },
   };
-}
-
-export function canRunJob(
-  allJobs: JobRecord[],
-  repoRoot: string,
-  config: Config,
-  now: Date,
-): boolean {
-  const repoJobs = allJobs.filter((j) => isSamePath(j.repoRoot, repoRoot));
-  const runningJobs = repoJobs.filter((j) => j.state === "running");
-  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const startedLastHour = repoJobs.filter((j) => j.createdAt >= oneHourAgo);
-
-  return (
-    runningJobs.length < config.project.maxConcurrent &&
-    startedLastHour.length < config.project.maxRunsPerHour
-  );
 }
