@@ -11,6 +11,16 @@ export interface ExecResult {
   timedOut: boolean;
 }
 
+const WIN_DIRECT = new Set(["git", "node", "python", "py", "go", "cargo", "make", "taskkill"]);
+
+/** True for commands that are .cmd/.bat shims on Windows (npm, npx, pnpm, yarn, …). */
+export function needsWindowsShell(cmd: string): boolean {
+  const base = cmd.replace(/^.*[\\/]/, "").toLowerCase();
+  if (/\.(cmd|bat)$/.test(base)) return true;
+  if (/\.exe$/.test(base)) return false;
+  return !WIN_DIRECT.has(base) && !path.isAbsolute(cmd);
+}
+
 export function quoteWinArg(arg: string): string {
   if (/^[A-Za-z0-9_./:=@+-]+$/.test(arg)) return arg;
   return `"${arg.replace(/"/g, '\\"')}"`;
@@ -23,8 +33,10 @@ export function runCommand(
   opts: { cwd: string; timeoutMs?: number; env?: NodeJS.ProcessEnv },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
-    const isWin = process.platform === "win32";
-    const child = isWin
+    // Only .cmd/.bat shims (npm, npx, …) need cmd.exe on Windows. Real executables like git are
+    // spawned directly: cmd.exe would cut multi-line arguments (commit messages) at the newline.
+    const useShell = process.platform === "win32" && needsWindowsShell(argv[0]);
+    const child = useShell
       ? spawn(argv.map(quoteWinArg).join(" "), {
           shell: true,
           cwd: opts.cwd,

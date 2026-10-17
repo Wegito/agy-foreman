@@ -41,3 +41,44 @@ describe("git", () => {
     await expect(git(["rev-parse", "nope-ref"], repo)).rejects.toBeInstanceOf(GitError);
   });
 });
+
+describe("Windows shell selection", () => {
+  it("only routes .cmd shims through cmd.exe", async () => {
+    const { needsWindowsShell } = await import("../../src/pipeline/exec.js");
+    expect(["npm", "npx", "pnpm", "yarn", "tool.cmd", "run.bat"].map(needsWindowsShell)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(
+      ["git", "node", "git.exe", process.execPath, "C:/Program Files/Git/cmd/git.exe"].map(
+        needsWindowsShell,
+      ),
+    ).toEqual([false, false, false, false, false]);
+  });
+});
+
+// Regression (found live on Windows): cmd.exe cut multi-line commit messages at the first newline,
+// so squash commits lost their provenance trailer.
+describe("multi-line arguments", () => {
+  it("keeps every line of a git commit message", async () => {
+    const repo = makeRepo({ "a.txt": "a" });
+    const { writeFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    writeFileSync(path.join(repo, "a.txt"), "b");
+    await git(
+      [
+        "commit",
+        "-qam",
+        "Title\n\nImplemented-by: gemini via agy-orchestrator\nVerified: 3/3 tests",
+      ],
+      repo,
+    );
+    expect(await git(["log", "-1", "--format=%B"], repo)).toBe(
+      "Title\n\nImplemented-by: gemini via agy-orchestrator\nVerified: 3/3 tests",
+    );
+  });
+});
