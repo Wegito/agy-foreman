@@ -2,8 +2,10 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { Outcome } from "../agy/types.js";
-import type { JobState } from "./index.js";
+import type { AgyUsage, Outcome } from "../agy/types.js";
+import type { Citation, Envelope, JobSpec, JobState, PipelineDeps } from "./index.js";
+import type { VerifyReport } from "./verify.js";
+import { repoHash } from "./worktree.js";
 
 export function fenceUntrusted(text: string, nonce: string): string {
   return `<<<AGY-UNTRUSTED nonce=${nonce}>>>\n${text.slice(0, 8000)}\n<<<END nonce=${nonce}>>>`;
@@ -31,15 +33,15 @@ export function getDeniedCommands(worktreePath: string): string[] {
   }
 }
 
-export function makeUntrustedReport(outcome: Outcome): string {
+export function makeUntrustedReport(outcome: Outcome, nonce?: string): string {
   const responseText =
     outcome.type === "success"
       ? outcome.response
       : outcome.type === "timeout"
         ? outcome.partialResponse
         : "";
-  const nonce = randomBytes(4).toString("hex");
-  return fenceUntrusted(responseText, nonce);
+  const n = nonce ?? randomBytes(4).toString("hex");
+  return fenceUntrusted(responseText, n);
 }
 
 export function mapFailureOutcome(
@@ -76,4 +78,105 @@ export function mapFailureOutcome(
     return { jobState: "error", jobReason: outcome.message };
   }
   return null;
+}
+
+export interface BuildEnvelopeFields {
+  state: JobState;
+  reason?: string;
+  branch?: string | null;
+  worktreePath?: string;
+  baseSha?: string;
+  headSha?: string;
+  mergeCheck?: { clean: boolean; conflictingFiles: string[] };
+  contract?: { redOnBase: boolean; greenAfter: boolean };
+  verify?: VerifyReport;
+  diffStat?: string;
+  untrustedReport?: string;
+  reportText?: string;
+  nonce?: string;
+  outcome?: Outcome;
+  deniedCommands?: string[];
+  guardEvents?: string[];
+  skillsUsed?: string[];
+  explore?: {
+    summary: string;
+    citations: Citation[];
+    unverifiedCitations: Citation[];
+    openQuestions: string[];
+  };
+  quota?: { resetInSec?: number; resetText?: string };
+  conversationId?: string;
+  usage?: AgyUsage;
+}
+
+export function buildEnvelope(
+  spec: JobSpec,
+  deps: PipelineDeps,
+  startTime: Date,
+  fields: BuildEnvelopeFields,
+): Envelope {
+  const durationSec = (deps.now().getTime() - startTime.getTime()) / 1000;
+  const conversationId =
+    fields.conversationId ?? fields.outcome?.conversationId ?? spec.conversationId;
+  const model = spec.config.model;
+  const skillsUsed = fields.skillsUsed ?? [];
+  const guardEvents = fields.guardEvents ?? [];
+
+  const worktreePath =
+    fields.worktreePath ?? path.join(deps.worktreeRoot, repoHash(spec.repoRoot), spec.jobId);
+  const branch =
+    fields.branch !== undefined
+      ? fields.branch
+      : spec.kind === "explore"
+        ? null
+        : `agy/${spec.jobId}`;
+  const baseSha = fields.baseSha ?? "";
+
+  const deniedCommands =
+    fields.deniedCommands ??
+    (worktreePath && existsSync(worktreePath) ? getDeniedCommands(worktreePath) : []);
+
+  let untrustedReport = fields.untrustedReport;
+  if (!untrustedReport) {
+    if (fields.outcome) {
+      untrustedReport = makeUntrustedReport(fields.outcome, fields.nonce);
+    } else {
+      const nonce = fields.nonce ?? randomBytes(4).toString("hex");
+      untrustedReport = fenceUntrusted(fields.reportText ?? "", nonce);
+    }
+  }
+
+  const quota =
+    fields.quota ??
+    (fields.outcome?.type === "quota"
+      ? { resetInSec: fields.outcome.resetInSec, resetText: fields.outcome.resetText }
+      : undefined);
+
+  const usage =
+    fields.usage ?? (fields.outcome?.type === "success" ? fields.outcome.usage : undefined);
+
+  return {
+    jobId: spec.jobId,
+    kind: spec.kind,
+    state: fields.state,
+    ...(fields.reason ? { reason: fields.reason } : {}),
+    branch,
+    worktreePath,
+    baseSha,
+    ...(fields.headSha ? { headSha: fields.headSha } : {}),
+    ...(fields.mergeCheck ? { mergeCheck: fields.mergeCheck } : {}),
+    ...(fields.contract ? { contract: fields.contract } : {}),
+    ...(fields.verify ? { verify: fields.verify } : {}),
+    ...(fields.diffStat !== undefined ? { diffStat: fields.diffStat } : {}),
+    untrustedReport,
+    deniedCommands,
+    guardEvents,
+    skillsUsed,
+    ...(fields.explore ? { explore: fields.explore } : {}),
+    ...(quota ? { quota } : {}),
+    model,
+    ...(conversationId !== undefined ? { conversationId } : {}),
+    ...(usage ? { usage } : {}),
+    durationSec,
+  };
 }

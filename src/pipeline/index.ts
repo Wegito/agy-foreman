@@ -3,11 +3,12 @@ import type { AgyUsage, StreamEvent } from "../agy/types.js";
 import type { Effort, ProjectConfig, RuntimeConfig } from "../config.js";
 import type { ContractTest } from "./contract.js";
 import type { VerifyReport } from "./verify.js";
-import { fenceUntrusted } from "./envelope-build.js";
+import { fenceUntrusted, buildEnvelope } from "./envelope-build.js";
+import { gatedRun } from "./gated-run.js";
 import { runImplementJob } from "./implement.js";
 import { runExploreJob } from "./explore.js";
 
-export { fenceUntrusted };
+export { fenceUntrusted, buildEnvelope, gatedRun };
 
 export type JobState =
   "passed" | "failed" | "refused" | "quota" | "timeout" | "cancelled" | "error" | "guard_violation";
