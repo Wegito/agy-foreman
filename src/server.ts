@@ -30,23 +30,28 @@ export class ElicitationApprover implements Approver {
         "client does not support approval cards; set gate: client in .agy-orchestrator.json",
       );
     }
+    return this.confirm(planCardText(c));
+  }
+
+  /**
+   * Accept = approve, Decline/Cancel = deny. The optional checkbox defaults to true, so a plain
+   * Accept works even when the client doesn't pre-fill defaults (Claude Code showed
+   * "decision not set" for a required enum field).
+   */
+  private async confirm(message: string): Promise<boolean> {
     const res = await this.server.server.elicitInput({
       mode: "form",
-      message: planCardText(c),
+      message: `${message}\n\nAccept to approve, Decline to deny.`,
       requestedSchema: {
         type: "object",
         properties: {
-          decision: {
-            type: "string",
-            enum: ["approve", "deny"],
-          },
+          approve: { type: "boolean", title: "Approve", default: true },
         },
-        required: ["decision"],
       },
     });
     return (
       res.action === "accept" &&
-      (res.content as { decision?: string } | undefined)?.decision === "approve"
+      (res.content as { approve?: boolean } | undefined)?.approve !== false
     );
   }
 
@@ -56,24 +61,7 @@ export class ElicitationApprover implements Approver {
         "client does not support approval cards; set gate: client in .agy-orchestrator.json",
       );
     }
-    const res = await this.server.server.elicitInput({
-      mode: "form",
-      message: taskCardText(c),
-      requestedSchema: {
-        type: "object",
-        properties: {
-          decision: {
-            type: "string",
-            enum: ["approve", "deny"],
-          },
-        },
-        required: ["decision"],
-      },
-    });
-    return (
-      res.action === "accept" &&
-      (res.content as { decision?: string } | undefined)?.decision === "approve"
-    );
+    return this.confirm(taskCardText(c));
   }
 
   async quota(c: QuotaCard): Promise<QuotaChoice | "unavailable"> {
@@ -89,10 +77,12 @@ export class ElicitationApprover implements Approver {
           properties: {
             choice: {
               type: "string",
+              title: "What next?",
               enum: ["retry", "continue_without", "wait"],
+              enumNames: ["Retry now", "Continue without Gemini", "Wait for reset"],
+              default: "wait",
             },
           },
-          required: ["choice"],
         },
       });
       if (

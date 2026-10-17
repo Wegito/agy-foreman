@@ -100,8 +100,8 @@ describe("ElicitationApprover", () => {
   it("approves only on accept + approve, and maps quota choices", async () => {
     const { server, client } = await connect(fakeManager([]), { elicitation: {} });
     const answers = [
-      { action: "accept", content: { decision: "approve" } },
-      { action: "accept", content: { decision: "deny" } },
+      { action: "accept", content: {} },
+      { action: "accept", content: { approve: false } },
       { action: "decline" },
       { action: "accept", content: { choice: "continue_without" } },
       { action: "cancel" },
