@@ -201,7 +201,7 @@ export function createServer(
       if (progressToken !== undefined && args.wait_s && args.wait_s > 0) {
         timer = setInterval(async () => {
           try {
-            const current = await manager.get(args.job_id);
+            const current = await manager.peek(args.job_id);
             if (current) {
               await extra.sendNotification({
                 method: "notifications/progress",

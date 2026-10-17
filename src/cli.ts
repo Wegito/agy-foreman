@@ -7,21 +7,22 @@ import { loadConfig, loadRuntimeConfig } from "./config.js";
 import { ClientModeApprover } from "./jobs/approver.js";
 import { renderProgressLine } from "./jobs/progress.js";
 import { isTerminal, JobStore, type JobRecord } from "./jobs/store.js";
+import { watchJob } from "./jobs/watch.js";
 import { jobsDir, stateDir } from "./paths.js";
 import { runCommand, type ExecResult } from "./pipeline/exec.js";
 import { createRuntime } from "./runtime.js";
 import { createServer, ElicitationApprover } from "./server.js";
-import { statusLineText } from "./statusline-main.js";
+import { readStdin, statusLineText } from "./statusline-main.js";
 import {
   claudeSettingsPath,
   installStatusLine,
-  previousStatusLine,
   recentJobs,
-  renderStatusLine,
   uninstallStatusLine,
   type InstallResult,
 } from "./statusline.js";
 import { quotaFile, refreshQuota, startQuotaRefresher } from "./usage-quota.js";
+
+export { readStdin };
 
 export interface Io {
   out: (s: string) => void;
@@ -227,25 +228,6 @@ function describeInstall(r: InstallResult): string {
   return `status line: installed in ${r.settings} (restart Claude Code to see it; remove with: agy-foreman statusline --uninstall)`;
 }
 
-/** Reads all of stdin, giving up after `ms` (Claude Code closes it; a terminal never would). */
-export function readStdin(ms = 300): Promise<string> {
-  if (process.stdin.isTTY) return Promise.resolve("");
-  return new Promise((resolve) => {
-    let data = "";
-    const done = () => {
-      process.stdin.removeAllListeners("data");
-      resolve(data);
-    };
-    const t = setTimeout(done, ms);
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", (c: string) => (data += c));
-    process.stdin.on("end", () => {
-      clearTimeout(t);
-      done();
-    });
-  });
-}
-
 export async function main(argv: string[], io: Io): Promise<number> {
   const cmd = argv[0] ?? "serve";
 
@@ -293,26 +275,14 @@ export async function main(argv: string[], io: Io): Promise<number> {
       timeoutSec = parseInt(argv[timeoutIdx + 1], 10);
     }
     const store = new JobStore(jobsDir({ env: io.env }));
-    let rec = await store.read(id);
+    const rec = await watchJob(store, id, { timeoutMs: timeoutSec * 1000 });
     if (!rec) {
       io.err(`job not found: ${id}`);
       return 3;
     }
-    const startMs = Date.now();
-    const maxWaitMs = timeoutSec * 1000;
-    while (!isTerminal(rec.state)) {
-      if (Date.now() - startMs >= maxWaitMs) {
-        io.err(`timeout waiting for ${id}`);
-        return 3;
-      }
-      const remaining = maxWaitMs - (Date.now() - startMs);
-      await new Promise((r) => setTimeout(r, Math.min(500, Math.max(0, remaining))));
-      const updated = await store.read(id);
-      if (!updated) {
-        io.err(`job not found: ${id}`);
-        return 3;
-      }
-      rec = updated;
+    if (!isTerminal(rec.state)) {
+      io.err(`timeout waiting for ${id}`);
+      return 3;
     }
     for (const line of summaryLines(rec)) {
       io.out(line);
@@ -324,24 +294,21 @@ export async function main(argv: string[], io: Io): Promise<number> {
     const once = argv.includes("--once");
     const id = argv.slice(1).find((a) => !a.startsWith("--"));
     const store = new JobStore(jobsDir({ env: io.env }));
+    if (id) {
+      await watchJob(store, id, {
+        timeoutMs: once ? 0 : undefined,
+        onUpdate: (rec) => io.out(renderProgressLine(rec)),
+      });
+      return 0;
+    }
     while (true) {
-      if (id) {
-        const rec = await store.read(id);
-        if (rec) {
-          io.out(renderProgressLine(rec));
-        }
-        if (once || !rec || isTerminal(rec.state)) {
-          return 0;
-        }
-      } else {
-        const all = await store.list();
-        const nonTerminal = all.filter((r) => !isTerminal(r.state));
-        for (const rec of nonTerminal) {
-          io.out(renderProgressLine(rec));
-        }
-        if (once || nonTerminal.length === 0) {
-          return 0;
-        }
+      const all = await store.list();
+      const nonTerminal = all.filter((r) => !isTerminal(r.state));
+      for (const rec of nonTerminal) {
+        io.out(renderProgressLine(rec));
+      }
+      if (once || nonTerminal.length === 0) {
+        return 0;
       }
       await new Promise((r) => setTimeout(r, 1000));
     }

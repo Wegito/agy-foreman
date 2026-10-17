@@ -49,16 +49,21 @@ export async function statusLineText(o: {
   return row ? `${row}\n ` : "";
 }
 
-async function readStdin(ms = 300): Promise<string> {
-  if (process.stdin.isTTY) return "";
+/** Reads all of stdin, giving up after `ms` (Claude Code closes it; a terminal never would). */
+export function readStdin(ms = 300): Promise<string> {
+  if (process.stdin.isTTY) return Promise.resolve("");
   return new Promise((resolve) => {
     let data = "";
-    const t = setTimeout(() => resolve(data), ms);
+    const done = () => {
+      process.stdin.removeAllListeners("data");
+      resolve(data);
+    };
+    const t = setTimeout(done, ms);
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (c: string) => (data += c));
     process.stdin.on("end", () => {
       clearTimeout(t);
-      resolve(data);
+      done();
     });
   });
 }

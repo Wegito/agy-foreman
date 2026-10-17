@@ -7,7 +7,8 @@ import { compactRecord, firstOpenItem, isSamePath } from "./helpers.js";
 import { Ledger } from "./ledger.js";
 import { selectLessons, type Audience, type LessonStore } from "./lessons.js";
 import { renderProgressLine } from "./progress.js";
-import { isTerminal, type Estimate, type JobRecord, type JobStore } from "./store.js";
+import { type Estimate, type JobRecord, type JobStore } from "./store.js";
+import { watchJob } from "./watch.js";
 import { prepareStartJob } from "./start.js";
 import { executeJob } from "./execute.js";
 import { handleAct, startFollowup, type ActionsContext } from "./actions.js";
@@ -149,22 +150,18 @@ export class JobManager {
     return this.scheduler.recoverOrphans();
   }
 
-  async get(jobId: string, o?: GetOptions): Promise<(JobRecord & { diff?: string }) | undefined> {
-    let rec = await this.deps.store.read(jobId);
+  async peek(jobId: string): Promise<JobRecord | undefined> {
+    const rec = await this.deps.store.read(jobId);
     if (!rec) return undefined;
+    return compactRecord(rec);
+  }
 
-    if (o?.waitSec && o.waitSec > 0) {
-      const startMs = Date.now();
-      const waitMs = o.waitSec * 1000;
-      while (!isTerminal(rec.state) && Date.now() - startMs < waitMs) {
-        const remaining = waitMs - (Date.now() - startMs);
-        await new Promise((r) => setTimeout(r, Math.min(200, Math.max(0, remaining))));
-        const updated = await this.deps.store.read(jobId);
-        if (updated) {
-          rec = updated;
-        }
-      }
-    }
+  async get(jobId: string, o?: GetOptions): Promise<(JobRecord & { diff?: string }) | undefined> {
+    const rec =
+      o?.waitSec && o.waitSec > 0
+        ? await watchJob(this.deps.store, jobId, { timeoutMs: o.waitSec * 1000 })
+        : await this.deps.store.read(jobId);
+    if (!rec) return undefined;
 
     let diff: string | undefined;
     if (o?.diffMode === "stat") {
