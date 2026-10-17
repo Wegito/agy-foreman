@@ -176,6 +176,7 @@ export class JobManager {
     let task: string;
     let title: string;
     let contractTests: ContractTest[] | undefined;
+    let checklist: string[] | undefined;
     let planContent: string | undefined;
 
     if (i.plan) {
@@ -195,6 +196,17 @@ export class JobManager {
         task = step.text;
         title = step.title;
         contractTests = i.kind === "explore" ? undefined : (i.contractTests ?? step.testBlocks);
+        // One checklist item per non-test file, so the run-phase % moves as Gemini ticks them off.
+        const implFiles = step.files.filter(
+          (f) => !/(\.test\.|\.spec\.|_test\.|(^|\/)test_)/.test(f),
+        );
+        checklist =
+          i.kind === "explore" || implFiles.length === 0
+            ? undefined
+            : [
+                ...implFiles.map((f) => `Implement ${f}`),
+                "Run the verification commands and fix failures",
+              ];
       } catch (err) {
         return {
           state: "refused",
@@ -381,6 +393,7 @@ export class JobManager {
       repoRoot: i.repoRoot,
       task,
       contractTests,
+      checklist,
       skills: i.skills,
       effort: i.effort ?? config.project.effort,
       baseRef: i.baseRef,

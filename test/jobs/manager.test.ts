@@ -274,3 +274,21 @@ describe("act", () => {
     await m.idle();
   });
 });
+
+describe("progress checklist from plan steps", () => {
+  it("builds one item per non-test file plus a verification item", async () => {
+    const { m, repo, specs } = setup();
+    const file = path.join(repo, "plan.md");
+    writeFileSync(
+      file,
+      "# P\n\n### Task 1: Store\n\n- Create: `src/jobs/a.ts`, `src/jobs/b.ts`\n- Test: `test/jobs/a.test.ts`\n",
+    );
+    await m.start({ repoRoot: repo, kind: "implement", plan: { file, step: 1 }, estimate: EST });
+    await m.idle();
+    expect(specs[0].checklist).toEqual([
+      "Implement src/jobs/a.ts",
+      "Implement src/jobs/b.ts",
+      "Run the verification commands and fix failures",
+    ]);
+  });
+});
