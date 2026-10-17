@@ -98,6 +98,27 @@ describe("run_command", () => {
   it("requires a word boundary for allowlist prefixes", () => {
     expect(d(p(), "run_command", { CommandLine: "npm testx" })).toBe("deny");
   });
+  it("denies commands that reference paths outside the worktree", () => {
+    for (const c of [
+      'Select-String -Path "C:/Users/someone/.claude/projects/x.jsonl" -Pattern brief',
+      "Get-ChildItem -Path C:/Users/someone/Downloads -Filter *brief*",
+      "cat ../../secrets.txt",
+      "ls ~/.ssh",
+      "Get-Content $env:USERPROFILE/.gitconfig",
+      "type %USERPROFILE%/.npmrc",
+      "npx vitest run /etc/passwd",
+    ]) {
+      expect(decide(p(), call("run_command", { CommandLine: c })).reason, c).toMatch(
+        /inside the worktree/,
+      );
+    }
+    expect(d(p(), "run_command", { CommandLine: "Get-ChildItem " + path.join(WT, "src") })).toBe(
+      "auto_approve",
+    );
+    expect(d(p(), "run_command", { CommandLine: "cat src/../README.md" })).toBe("auto_approve");
+    expect(d(p(), "run_command", { CommandLine: "npm test", Cwd: os.homedir() })).toBe("deny");
+    expect(d(p(), "run_command", { CommandLine: "npm test", Cwd: WT })).toBe("auto_approve");
+  });
   it("applies unknownCommands", () => {
     const r = decide(p(), call("run_command", { CommandLine: "python script.py" }));
     expect(r).toMatchObject({ decision: "deny", reason: expect.stringMatching(/allowlist/) });

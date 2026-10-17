@@ -78,6 +78,22 @@ function getRelPosix(worktree: string, resolvedPath: string): string {
   return rel.split(path.sep).join("/");
 }
 
+/**
+ * Returns the first path-like token in a command line that points outside the worktree
+ * (absolute paths, `..` escapes, home or environment-variable expansions), or null.
+ */
+function pathOutsideWorktree(worktree: string, cmdLine: string): string | null {
+  const tokens = cmdLine.split(/[\s,=]+/).map((t) => t.replace(/^["'(]+|["')]+$/g, ""));
+  for (const tok of tokens) {
+    if (!tok) continue;
+    if (/^(~|\$env:|\$HOME\b|%[A-Za-z_]+%)/i.test(tok)) return tok;
+    if (/^([A-Za-z]:[\\/]|[\\/]|\.\.([\\/]|$))/.test(tok)) {
+      if (!isInside(worktree, resolveTarget(worktree, tok))) return tok;
+    }
+  }
+  return null;
+}
+
 export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
   const name = call.name;
   const args = call.args ?? {};
@@ -152,6 +168,21 @@ export function decide(policy: GatePolicy, call: ToolCall): GateDecision {
 
     if (danger.test(cmdLine)) {
       return { decision: "deny", reason: "Dangerous command not allowed." };
+    }
+
+    const cwd = args.Cwd === undefined ? undefined : String(args.Cwd);
+    if (cwd && !isInside(policy.worktree, resolveTarget(policy.worktree, cwd))) {
+      return {
+        decision: "deny",
+        reason: "Commands must run inside the worktree (Cwd is outside).",
+      };
+    }
+    const outside = pathOutsideWorktree(policy.worktree, cmdLine);
+    if (outside) {
+      return {
+        decision: "deny",
+        reason: `Commands may only reference paths inside the worktree (found ${outside}).`,
+      };
     }
 
     const segments = cmdLine
