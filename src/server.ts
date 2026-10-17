@@ -15,8 +15,9 @@ import {
   type QuotaChoice,
   type PromoteCard,
 } from "./jobs/approver.js";
-import type { ActInput, JobManager, StartInput } from "./jobs/manager.js";
+import type { JobManager } from "./jobs/manager.js";
 import { renderProgressLine } from "./jobs/progress.js";
+import { actShape, parseActInput, startShape, toStartInput } from "./tool-inputs.js";
 
 export const TOOL_NAMES: readonly ["agy_status", "agy_start", "agy_get", "agy_act"] = [
   "agy_status",
@@ -167,70 +168,10 @@ export function createServer(
     "agy_start",
     {
       description: "Start an implement or explore delegation job",
-      inputSchema: {
-        repo: z.string().optional().describe("Repository root path"),
-        kind: z.enum(["implement", "explore"]).describe("Task kind"),
-        task: z.string().optional().describe("Task description"),
-        plan: z
-          .object({
-            file: z.string().describe("Plan file"),
-            step: z.number().describe("Step number"),
-            delegate_steps: z.array(z.number()).optional().describe("Steps for Gemini"),
-          })
-          .optional()
-          .describe("Plan step specification"),
-        contract_tests: z
-          .array(
-            z.object({
-              path: z.string().describe("Test file path"),
-              content: z.string().describe("Test file content"),
-            }),
-          )
-          .optional()
-          .describe("Contract tests"),
-        skills: z.array(z.string()).optional().describe("Skills to use"),
-        estimate: z
-          .object({
-            direct_tokens: z.number().describe("Direct tokens"),
-            delegate_overhead_tokens: z.number().describe("Delegation overhead"),
-            reason: z.string().describe("Estimate reason"),
-          })
-          .optional()
-          .describe("Token estimate"),
-        effort: z.enum(["low", "medium", "high"]).optional().describe("Effort level"),
-        dry_run: z.boolean().optional().describe("Dry run flag"),
-        base_ref: z.string().optional().describe("Base git ref"),
-      },
+      inputSchema: startShape,
     },
     async (args) => {
-      const startInput: StartInput = {
-        repoRoot: args.repo ?? o.defaultRepoRoot(),
-        kind: args.kind,
-        task: args.task,
-        plan: args.plan
-          ? {
-              file: args.plan.file,
-              step: args.plan.step,
-              delegateSteps: args.plan.delegate_steps,
-            }
-          : undefined,
-        contractTests: args.contract_tests?.map((ct) => ({
-          path: ct.path,
-          content: ct.content,
-        })),
-        skills: args.skills,
-        estimate: args.estimate
-          ? {
-              directTokens: args.estimate.direct_tokens,
-              delegateOverheadTokens: args.estimate.delegate_overhead_tokens,
-              reason: args.estimate.reason,
-            }
-          : undefined,
-        effort: args.effort,
-        dryRun: args.dry_run,
-        baseRef: args.base_ref,
-      };
-      const res = await manager.start(startInput);
+      const res = await manager.start(toStartInput(args, o.defaultRepoRoot()));
       return {
         content: [{ type: "text", text: JSON.stringify(res) }],
       };
@@ -299,110 +240,17 @@ export function createServer(
     "agy_act",
     {
       description: "Act on a job or delegation state",
-      inputSchema: {
-        action: z
-          .enum([
-            "followup",
-            "finalize",
-            "cancel",
-            "quota_choice",
-            "resume_delegation",
-            "revoke_plan",
-            "lesson",
-          ])
-          .describe("Action"),
-        job_id: z.string().optional().describe("Job ID"),
-        feedback: z.string().optional().describe("Feedback"),
-        mode: z.enum(["squash", "merge", "discard", "keep"]).optional().describe("Finalize mode"),
-        choice: z.enum(["retry", "continue_without", "wait"]).optional().describe("Quota choice"),
-        plan_file: z.string().optional().describe("Plan file to revoke"),
-        text: z.string().optional().describe("Lesson text"),
-        audience: z.enum(["implementer", "orchestrator"]).optional().describe("Audience"),
-        scope: z.enum(["project", "global"]).optional().describe("Scope"),
-        tags: z.array(z.string()).optional().describe("Tags"),
-      },
+      inputSchema: actShape,
     },
     async (args) => {
-      let actInput: ActInput;
-      switch (args.action) {
-        case "followup":
-          if (!args.job_id || typeof args.feedback !== "string") {
-            return {
-              isError: true,
-              content: [{ type: "text", text: "action 'followup' requires job_id and feedback" }],
-            };
-          }
-          actInput = { action: "followup", jobId: args.job_id, feedback: args.feedback };
-          break;
-        case "finalize":
-          if (!args.job_id || !args.mode) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: "action 'finalize' requires job_id and mode" }],
-            };
-          }
-          actInput = { action: "finalize", jobId: args.job_id, mode: args.mode };
-          break;
-        case "cancel":
-          if (!args.job_id) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: "action 'cancel' requires job_id" }],
-            };
-          }
-          actInput = { action: "cancel", jobId: args.job_id };
-          break;
-        case "quota_choice":
-          if (!args.choice) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: "action 'quota_choice' requires choice" }],
-            };
-          }
-          actInput = { action: "quota_choice", choice: args.choice };
-          break;
-        case "resume_delegation":
-          actInput = { action: "resume_delegation" };
-          break;
-        case "revoke_plan":
-          if (!args.plan_file) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: "action 'revoke_plan' requires plan_file" }],
-            };
-          }
-          actInput = { action: "revoke_plan", planFile: args.plan_file };
-          break;
-        case "lesson":
-          if (typeof args.text !== "string" || !args.audience || !args.scope) {
-            return {
-              isError: true,
-              content: [
-                { type: "text", text: "action 'lesson' requires text, audience, and scope" },
-              ],
-            };
-          }
-          actInput = {
-            action: "lesson",
-            text: args.text,
-            audience: args.audience,
-            scope: args.scope,
-            ...(args.tags !== undefined ? { tags: args.tags } : {}),
-            ...(args.job_id !== undefined ? { jobId: args.job_id } : {}),
-          };
-          break;
-        default:
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `unknown action: ${(args as { action: string }).action}`,
-              },
-            ],
-          };
+      const parsed = parseActInput(args);
+      if (!parsed.ok) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: parsed.error }],
+        };
       }
-      const res = await manager.act(actInput);
+      const res = await manager.act(parsed.value);
       return {
         content: [{ type: "text", text: JSON.stringify(res) }],
       };
