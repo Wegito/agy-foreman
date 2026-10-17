@@ -92,3 +92,16 @@ describe("CooldownRegistry", () => {
     expect(reg.describe("ModelA")).toBe("1h1m1s");
   });
 });
+
+describe("minimum cooldown", () => {
+  it("clamps 'Resets in 0s' to at least 60 seconds", () => {
+    let now = 0;
+    const reg = new CooldownRegistry(() => now);
+    reg.set("gemini", 0);
+    now = 59_000;
+    expect(reg.cooling("gemini")).toBe(true);
+    now = 61_000;
+    expect(reg.cooling("gemini")).toBe(false);
+  });
+});
+

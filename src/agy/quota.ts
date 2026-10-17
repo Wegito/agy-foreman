@@ -9,6 +9,9 @@
 
 export const DEFAULT_COOLDOWN_SEC = 15 * 60;
 
+/** agy sometimes reports "Resets in 0s"; never cool down for less than this. */
+export const MIN_COOLDOWN_SEC = 60;
+
 const QUOTA_RE = /RESOURCE_EXHAUSTED \(code 429\)/;
 const RESET_RE = /Resets in ((?:\d+h)?(?:\d+m)?(?:\d+s)?)\b/;
 
@@ -65,7 +68,8 @@ export class CooldownRegistry {
   constructor(private now: () => number = Date.now) {}
 
   set(model: string, resetSeconds: number | undefined): void {
-    this.until.set(model, this.now() + (resetSeconds ?? DEFAULT_COOLDOWN_SEC) * 1000);
+    const sec = Math.max(MIN_COOLDOWN_SEC, resetSeconds ?? DEFAULT_COOLDOWN_SEC);
+    this.until.set(model, this.now() + sec * 1000);
   }
 
   cooling(model: string): boolean {

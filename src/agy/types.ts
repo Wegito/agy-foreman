@@ -40,3 +40,13 @@ export type StreamEvent =
     }
   | { kind: "result"; result: AgyResult }
   | { kind: "other"; event: string };
+
+export type Outcome =
+  | { type: "success"; response: string; conversationId?: string; usage: AgyUsage; durationSec: number; structuredOutput?: unknown }
+  | { type: "quota"; resetInSec?: number; resetText?: string; conversationId?: string }
+  | { type: "denied"; detail: string; conversationId?: string }
+  | { type: "timeout"; partialResponse: string; conversationId?: string }
+  | { type: "guard_violation"; reason: string; event: StreamEvent; conversationId?: string }
+  | { type: "cancelled"; conversationId?: string }
+  | { type: "error"; message: string; exitCode: number | null; conversationId?: string };
+
