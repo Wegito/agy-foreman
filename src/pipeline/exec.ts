@@ -119,16 +119,6 @@ export async function git(args: string[], cwd: string): Promise<string> {
   const hooksDir = getEmptyHooksDir();
   const res = await runCommand(["git", "-c", `core.hooksPath=${hooksDir}`, ...args], { cwd });
   if (res.code !== 0) {
-    if (
-      args[0] === "branch" &&
-      args[1] === "-f" &&
-      args.length >= 4 &&
-      res.stderr.includes("cannot force update the branch")
-    ) {
-      const branch = args[2];
-      const target = args[3];
-      return git(["update-ref", `refs/heads/${branch}`, target], cwd);
-    }
     throw new GitError(
       `git ${args.join(" ")} failed with exit code ${res.code}: ${res.stderr}`,
       res.code,

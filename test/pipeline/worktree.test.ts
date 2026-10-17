@@ -134,7 +134,7 @@ describe("git state snapshots", () => {
     await commitAll(wt, "job work");
     expect(gitStateChanged(before, await snapshotGitState(repo, "agy/s-1"))).toEqual([]);
 
-    await git(["branch", "-f", "main", "HEAD"], wt.path);
+    await git(["update-ref", "refs/heads/main", "HEAD"], wt.path);
     const common = await git(["rev-parse", "--git-common-dir"], repo);
     writeFileSync(path.resolve(repo, common, "hooks", "post-checkout"), "#!/bin/sh\necho pwned\n");
     expect(gitStateChanged(before, await snapshotGitState(repo, "agy/s-1"))).toEqual([
