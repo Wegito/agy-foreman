@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { decide, globToRegExp, type GatePolicy } from "../../src/pipeline/gate.js";
@@ -198,5 +199,23 @@ describe("quoted separators", () => {
       }),
     ).toBe("auto_approve");
     expect(d(p(), "run_command", { CommandLine: 'echo "x" | git push' })).toBe("deny");
+  });
+});
+
+// Regression (found in CI on macOS): the worktree was /var/... while agy reported /private/var/...,
+// the same folder through a symlink, and every write looked like it left the worktree.
+describe("symlinked worktree paths", () => {
+  it("treats the real path and the symlinked path of the worktree as the same folder", () => {
+    const real = mkdtempSync(path.join(os.tmpdir(), "foreman-real-"));
+    mkdirSync(path.join(real, "src"));
+    const link = path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-link-")), "wt");
+    symlinkSync(real, link, "junction");
+    const pol = p({ worktree: link });
+    expect(d(pol, "write_to_file", { TargetFile: path.join(real, "src", "a.ts") })).toBe(
+      "auto_approve",
+    );
+    expect(d(pol, "write_to_file", { TargetFile: path.join(real, "tests", "x.test.ts") })).toBe(
+      "deny",
+    );
   });
 });

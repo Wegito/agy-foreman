@@ -1,4 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { writePolicy } from "./toolcall-record.js";
 
@@ -60,10 +67,30 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * The resolved path with symlinks resolved on its longest existing prefix. Found in CI: on macOS
+ * the temp worktree is /var/... while agy reports /private/var/..., the same folder.
+ */
+function canonical(p: string): string {
+  let head = path.resolve(p);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(head), ...rest.reverse());
+    } catch {
+      const parent = path.dirname(head);
+      if (parent === head) return path.resolve(p);
+      rest.push(path.basename(head));
+      head = parent;
+    }
+  }
+}
+
 function isInside(root: string, target: string): boolean {
-  const r = process.platform === "win32" ? path.resolve(root).toLowerCase() : path.resolve(root);
-  const t =
-    process.platform === "win32" ? path.resolve(target).toLowerCase() : path.resolve(target);
+  const norm = (p: string) =>
+    process.platform === "win32" ? canonical(p).toLowerCase() : canonical(p);
+  const r = norm(root);
+  const t = norm(target);
   return t === r || t.startsWith(r + (r.endsWith(path.sep) ? "" : path.sep));
 }
 
@@ -75,7 +102,7 @@ function resolveTarget(worktree: string, targetPath: string): string {
 }
 
 function getRelPosix(worktree: string, resolvedPath: string): string {
-  const rel = path.relative(worktree, resolvedPath);
+  const rel = path.relative(canonical(worktree), canonical(resolvedPath));
   return rel.split(path.sep).join("/");
 }
 
@@ -90,6 +117,9 @@ function pathOutsideWorktree(worktree: string, cmdLine: string): string | null {
     if (/^(~|\$env:|\$HOME\b|%[A-Za-z_]+%)/i.test(tok)) return tok;
     // Drive paths, POSIX roots, UNC paths and `..` escapes. A lone leading backslash is left
     // alone: it is far more often a string escape (node -e '…\"x\"…') than a root-relative path.
+    // A drive path can never be inside a worktree on Linux or macOS (there it would otherwise
+    // resolve as a relative path; found in CI).
+    if (/^[A-Za-z]:[\\/]/.test(tok) && process.platform !== "win32") return tok;
     if (/^([A-Za-z]:[\\/]|\/|\\\\|\.\.([\\/]|$))/.test(tok)) {
       if (!isInside(worktree, resolveTarget(worktree, tok))) return tok;
     }

@@ -186,7 +186,8 @@ describe("install / uninstall", () => {
       wrapFile: path.join(d, "wrap.json"),
     };
   };
-  const entry = "C:\\x\\agy-foreman\\dist\\index.js";
+  // Platform-neutral (found in CI: a Windows-only path broke Linux and macOS).
+  const entry = path.join("/x", "agy-foreman", "dist", "index.js");
 
   it("installs into empty settings, keeps other keys, and is idempotent", async () => {
     const f = files();
@@ -194,7 +195,7 @@ describe("install / uninstall", () => {
     const s = JSON.parse(readFileSync(f.settingsFile, "utf8"));
     expect(s.statusLine).toEqual({
       type: "command",
-      command: 'node "C:/x/agy-foreman/dist/statusline.js"',
+      command: 'node "/x/agy-foreman/dist/statusline.js"',
       padding: 1,
       refreshInterval: 2,
     });
