@@ -6,8 +6,6 @@ import { isTerminal, type JobRecord } from "./jobs/store.js";
 import { runCommand } from "./pipeline/exec.js";
 import type { QuotaSnapshot, QuotaWindow } from "./usage-quota.js";
 
-const BAR_CELLS = 16;
-
 const ansi = (code: string, s: string, color: boolean) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
 
 /** Plain-text title: drops Markdown emphasis and code ticks from plan headings. */
@@ -94,13 +92,6 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + "…";
 }
 
-function bar(done: number, total: number, color: boolean): string {
-  const filled = Math.round((Math.min(total, Math.max(0, done)) / total) * BAR_CELLS);
-  return (
-    ansi("32", "━".repeat(filled), color) + ansi("2;37", "─".repeat(BAR_CELLS - filled), color)
-  );
-}
-
 function activeJobs(jobs: JobRecord[]): JobRecord[] {
   return jobs
     .filter((j) => !isTerminal(j.state))
@@ -113,14 +104,36 @@ export function shownJob(jobs: JobRecord[]): JobRecord | undefined {
   return active.find((a) => a.state === "running") ?? active[0];
 }
 
-/** Distinct steps of this plan whose job passed. */
-export function planStepsDone(jobs: JobRecord[], j: JobRecord): number {
-  const done = new Set(
-    jobs
-      .filter((x) => x.plan?.file === j.plan?.file && x.state === "passed")
-      .map((x) => x.plan!.step),
-  );
-  return done.size;
+export type TaskState = "passed" | "running" | "failed" | "pending";
+
+/** State of each task 1..total of this job's plan: passed beats running beats failed. */
+export function planTaskStates(jobs: JobRecord[], j: JobRecord, total: number): TaskState[] {
+  const same = jobs.filter((x) => x.plan?.file === j.plan?.file);
+  return Array.from({ length: total }, (_, i) => {
+    const mine = same.filter((x) => x.plan!.step === i + 1);
+    if (mine.some((x) => x.state === "passed")) return "passed";
+    if (mine.some((x) => !isTerminal(x.state))) return "running";
+    if (mine.length > 0) return "failed";
+    return "pending";
+  });
+}
+
+const SPINNER = ["◐", "◓", "◑", "◒"];
+
+/** One marker per task; running ones spin with each refresh so a live job never looks frozen. */
+function taskStrip(states: TaskState[], now: Date, color: boolean): string {
+  const spin = SPINNER[Math.floor(now.getTime() / 2000) % SPINNER.length];
+  return states
+    .map((s) =>
+      s === "passed"
+        ? ansi("32", "●", color)
+        : s === "running"
+          ? ansi("36", spin, color)
+          : s === "failed"
+            ? ansi("31", "✕", color)
+            : ansi("2;37", "○", color),
+    )
+    .join("");
 }
 
 /** Start → end of a plan's jobs; ends at the last job's finish, counts only while one runs. */
@@ -208,11 +221,13 @@ export function renderStatusLine(
     const steps = j.plan && o.planSteps && o.planSteps > 0 ? o.planSteps : undefined;
     let first = label;
     if (steps !== undefined) {
-      const done = Math.min(planStepsDone(jobs, j), steps);
-      const count = `${done}/${steps} steps`;
+      const states = planTaskStates(jobs, j, steps);
+      const done = states.filter((s) => s === "passed").length;
+      const running = states.filter((s) => s === "running").length;
+      const count = `${done}/${steps} tasks${running > 1 ? ` · ${running} running` : ""}`;
       first = seg(
-        `agy ${"━".repeat(BAR_CELLS)} ${count}`,
-        `${label.text} ${bar(done, steps, color)} ${ansi("1", count, color)}`,
+        `agy ${"●".repeat(steps)} ${count}`,
+        `${label.text} ${taskStrip(states, now, color)} ${ansi("1", count, color)}`,
         100,
       );
     }

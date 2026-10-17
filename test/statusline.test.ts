@@ -39,8 +39,9 @@ describe("renderStatusLine", () => {
     expect(line).not.toMatch(/%|ETA|remaining/i);
   });
   // Regression (found live): the in-run % sat at 10 and jumped to 85, because Gemini ticks its
-  // checklist only at the end. The bar now counts finished plan steps instead.
-  it("shows passed plan steps, live activity, and only the plan's time and tokens", () => {
+  // checklist only at the end. The row now shows one marker per plan task instead.
+  it("shows a marker per task, live activity, and only the plan's time and tokens", () => {
+    const spin = ["◐", "◓", "◑", "◒"][Math.floor(NOW.getTime() / 2000) % 4];
     const running = job({
       id: "t-b",
       title: "Learning loop in `JobManager` and the **MCP** lesson action",
@@ -66,7 +67,7 @@ describe("renderStatusLine", () => {
     });
     expect(renderStatusLine([earlier, running], NOW, { color: false, planSteps: 4 })).toBe(
       [
-        "agy ━━━━──────────── 1/4 steps",
+        `agy ●${spin}○○ 1/4 tasks`,
         "#2 Learning loop in JobManager and the MCP…",
         "› running · 12 tool calls · src/jobs/manager.ts",
         "plan 4m12s · 644k tok",
@@ -290,5 +291,22 @@ describe("review fixes", () => {
     expect(renderStatusLine([fix], NOW, { color: false, planSteps: 7 })).toContain(
       "#1 fix Incidents",
     );
+  });
+});
+
+describe("task markers", () => {
+  // Regression (found live): a bar of finished tasks sat at 2/7 for many minutes and looked dead.
+  it("shows failed and running tasks, and the spinner moves between refreshes", () => {
+    const passed = job({ id: "t-1", state: "passed", plan: { file: "p.md", step: 1 } });
+    const failed = job({ id: "t-2", state: "failed", plan: { file: "p.md", step: 2 } });
+    const a = job({ id: "t-3", plan: { file: "p.md", step: 3 } });
+    const b = job({ id: "t-4", plan: { file: "p.md", step: 5 } });
+    const at = (ms: number) =>
+      renderStatusLine([passed, failed, a, b], new Date(NOW.getTime() + ms), {
+        color: false,
+        planSteps: 5,
+      }).split("  ·  ")[0];
+    expect(at(0)).toMatch(/^agy ●✕[◐◓◑◒]○[◐◓◑◒] 1\/5 tasks · 2 running$/);
+    expect(at(0)).not.toBe(at(2000));
   });
 });
