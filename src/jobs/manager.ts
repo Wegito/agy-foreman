@@ -5,12 +5,13 @@ import type { Approver } from "./approver.js";
 import type { FlagStore } from "./flags.js";
 import { compactRecord, firstOpenItem, isSamePath } from "./helpers.js";
 import { Ledger } from "./ledger.js";
-import type { Audience, LessonStore } from "./lessons.js";
+import { selectLessons, type Audience, type LessonStore } from "./lessons.js";
 import { renderProgressLine } from "./progress.js";
 import { isTerminal, type Estimate, type JobRecord, type JobStore } from "./store.js";
 import { prepareStartJob } from "./start.js";
 import { executeJob } from "./execute.js";
 import { handleAct, startFollowup, type ActionsContext } from "./actions.js";
+import { DelegationPolicy, PlanGrants } from "./policy.js";
 import { JobScheduler } from "./scheduler.js";
 import type { ContractTest } from "../pipeline/contract.js";
 
@@ -86,8 +87,12 @@ export interface JobManagerDeps {
 
 export class JobManager {
   private scheduler: JobScheduler;
+  private policy: DelegationPolicy;
+  private grants: PlanGrants;
 
   constructor(private deps: JobManagerDeps) {
+    this.policy = new DelegationPolicy(deps.flags, deps.approver, deps.now);
+    this.grants = new PlanGrants(deps.flags, deps.now);
     this.scheduler = new JobScheduler({
       store: deps.store,
       loadConfig: deps.loadConfig,
@@ -96,6 +101,7 @@ export class JobManager {
         executeJob(
           {
             deps: this.deps,
+            policy: this.policy,
             write: (r) => this.scheduler.write(r),
             startFollowup: (parent, feedback, bypassApproval) =>
               startFollowup(this.getActionsContext(), parent, feedback, bypassApproval),
@@ -111,11 +117,16 @@ export class JobManager {
     return {
       deps: this.deps,
       scheduler: this.scheduler,
+      policy: this.policy,
+      grants: this.grants,
     };
   }
 
   async start(i: StartInput): Promise<StartResult> {
-    const prep = await prepareStartJob(this.deps, i);
+    const prep = await prepareStartJob(this.deps, i, {
+      policy: this.policy,
+      grants: this.grants,
+    });
     if (prep.type === "result") {
       return prep.result;
     }
@@ -196,13 +207,7 @@ export class JobManager {
   }
 
   async status(repoRoot?: string): Promise<Record<string, unknown>> {
-    const flags = await this.deps.flags.read();
-    const delegation = flags.delegationPaused ? "paused" : "active";
-    const isCooldown =
-      flags.cooldownUntil && new Date(flags.cooldownUntil).getTime() > this.deps.now().getTime();
-    const cooldown = isCooldown
-      ? { until: flags.cooldownUntil, resetText: flags.cooldownText }
-      : undefined;
+    const { delegation, cooldown } = await this.policy.state();
 
     const allJobs = await this.deps.store.list();
     const filteredJobs = repoRoot
@@ -231,25 +236,7 @@ export class JobManager {
     if (this.deps.lessons) {
       const rRoot = repoRoot ?? filteredJobs[0]?.repoRoot ?? process.cwd();
       const stores = this.deps.lessons(rRoot);
-      const projLessons = await stores.project.select("orchestrator", [], 5);
-      const globLessons = await stores.global.select("orchestrator", [], 5);
-      const seen = new Set<string>();
-      for (const l of projLessons) {
-        if (!seen.has(l.text)) {
-          seen.add(l.text);
-          lessons.push(l.text);
-          if (lessons.length === 5) break;
-        }
-      }
-      if (lessons.length < 5) {
-        for (const l of globLessons) {
-          if (!seen.has(l.text)) {
-            seen.add(l.text);
-            lessons.push(l.text);
-            if (lessons.length === 5) break;
-          }
-        }
-      }
+      lessons = await selectLessons(stores, "orchestrator", [], 5);
     }
 
     return {

@@ -11,9 +11,11 @@ import { computeProgress } from "./progress.js";
 import type { JobRecord } from "./store.js";
 import { firstOpenItem, isSamePath } from "./helpers.js";
 import type { JobManagerDeps } from "./manager.js";
+import { DelegationPolicy } from "./policy.js";
 
 export interface ExecuteJobContext {
   deps: JobManagerDeps;
+  policy?: DelegationPolicy;
   write: (record: JobRecord) => Promise<void>;
   startFollowup: (
     parent: JobRecord,
@@ -193,39 +195,20 @@ export async function executeJob(
     });
 
     if (envelope.state === "quota") {
-      const resetInSec = envelope.quota?.resetInSec ?? 900;
-      const cooldownSec = Math.max(60, resetInSec);
-      const cooldownUntil = new Date(ctx.deps.now().getTime() + cooldownSec * 1000).toISOString();
-      const cooldownText = envelope.quota?.resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
-      await ctx.deps.flags.update((f) => {
-        f.cooldownUntil = cooldownUntil;
-        f.cooldownText = cooldownText;
+      const policy =
+        ctx.policy ?? new DelegationPolicy(ctx.deps.flags, ctx.deps.approver, ctx.deps.now);
+      const choice = await policy.onQuota({
+        resetInSec: envelope.quota?.resetInSec,
+        resetText: envelope.quota?.resetText,
+        pausedJobId: record.id,
+        repoRoot: record.repoRoot,
       });
-
-      try {
-        const choice = await ctx.deps.approver.quota({
-          resetText: cooldownText,
-          resetAt: cooldownUntil,
-          pausedJobId: record.id,
-          repoRoot: record.repoRoot,
-        });
-        if (choice === "retry") {
-          await ctx.deps.flags.update((f) => {
-            delete f.cooldownUntil;
-            delete f.cooldownText;
-          });
-          await ctx.startFollowup(
-            record,
-            "Continue the task; the previous run stopped at a usage limit.",
-            true,
-          );
-        } else if (choice === "continue_without") {
-          await ctx.deps.flags.update((f) => {
-            f.delegationPaused = true;
-          });
-        }
-      } catch {
-        // ignore
+      if (choice === "retry") {
+        await ctx.startFollowup(
+          record,
+          "Continue the task; the previous run stopped at a usage limit.",
+          true,
+        );
       }
     }
   }

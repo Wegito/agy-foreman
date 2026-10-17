@@ -255,3 +255,30 @@ export class LessonStore {
     return lines.join("\n") + "\n";
   }
 }
+
+export async function selectLessons(
+  stores: { project: LessonStore; global: LessonStore },
+  audience: Audience,
+  tags: string[],
+  n = 5,
+): Promise<string[]> {
+  const projLessons = await stores.project.select(audience, tags, n);
+  const globLessons = await stores.global.select(audience, tags, n);
+  const result: string[] = [];
+  const seenTexts = new Set<string>();
+  for (const l of projLessons) {
+    if (!seenTexts.has(l.text)) {
+      seenTexts.add(l.text);
+      result.push(l.text);
+      if (result.length >= n) return result;
+    }
+  }
+  for (const l of globLessons) {
+    if (!seenTexts.has(l.text)) {
+      seenTexts.add(l.text);
+      result.push(l.text);
+      if (result.length >= n) return result;
+    }
+  }
+  return result;
+}

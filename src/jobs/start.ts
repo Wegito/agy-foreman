@@ -11,9 +11,9 @@ import type { JobSpec } from "../pipeline/index.js";
 import { resolveSkills } from "../pipeline/skills.js";
 import { createWorktree, removeWorktree } from "../pipeline/worktree.js";
 import { ApprovalUnavailable, type TaskCard } from "./approver.js";
-import { hashPlan, validGrant } from "./flags.js";
-import { tagsFor } from "./lessons.js";
+import { selectLessons, tagsFor } from "./lessons.js";
 import { openSpecContext, parsePlanStep, planTitle } from "./plan.js";
+import { DelegationPolicy, PlanGrants } from "./policy.js";
 import { emptyProgress, newJobId, type JobRecord } from "./store.js";
 import { tokenGate } from "./tokengate.js";
 import type { JobManagerDeps, StartInput, StartResult } from "./manager.js";
@@ -28,57 +28,21 @@ export type PreparedStart =
       lessonsInjected: number;
     };
 
-export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Promise<PreparedStart> {
-  // 1. Delegation paused
-  const flags = await deps.flags.read();
-  if (flags.delegationPaused) {
+export async function prepareStartJob(
+  deps: JobManagerDeps,
+  i: StartInput,
+  modules?: { policy?: DelegationPolicy; grants?: PlanGrants },
+): Promise<PreparedStart> {
+  const policy = modules?.policy ?? new DelegationPolicy(deps.flags, deps.approver, deps.now);
+  const grants = modules?.grants ?? new PlanGrants(deps.flags, deps.now);
+
+  // 1-2. Policy check
+  const check = await policy.check(i.repoRoot);
+  if (!check.ok) {
     return {
       type: "result",
-      result: {
-        state: "refused",
-        reason: "delegation is paused; call agy_act resume_delegation to unpause",
-      },
+      result: check.result,
     };
-  }
-
-  // 2. Cooldown active
-  if (flags.cooldownUntil && new Date(flags.cooldownUntil).getTime() > deps.now().getTime()) {
-    const choice = await deps.approver.quota({
-      resetText: flags.cooldownText,
-      resetAt: flags.cooldownUntil,
-      repoRoot: i.repoRoot,
-    });
-    if (choice === "retry") {
-      await deps.flags.update((f) => {
-        delete f.cooldownUntil;
-        delete f.cooldownText;
-      });
-    } else if (choice === "continue_without") {
-      await deps.flags.update((f) => {
-        f.delegationPaused = true;
-      });
-      return {
-        type: "result",
-        result: {
-          state: "refused",
-          reason: "continue without Gemini",
-        },
-      };
-    } else {
-      // "wait" or "unavailable"
-      return {
-        type: "result",
-        result: {
-          state: "quota",
-          reason: "Gemini quota active",
-          quota: {
-            resetText: flags.cooldownText,
-            resetAt: flags.cooldownUntil,
-          },
-          options: ["retry", "continue_without", "wait"],
-        },
-      };
-    }
   }
 
   // 3. Resolve the task
@@ -148,25 +112,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
   let lessonsInjected: string[] = [];
   if (deps.lessons) {
     const stores = deps.lessons(i.repoRoot);
-    const projLessons = await stores.project.select("implementer", lessonTags, 5);
-    const globLessons = await stores.global.select("implementer", lessonTags, 5);
-    const seenTexts = new Set<string>();
-    for (const l of projLessons) {
-      if (!seenTexts.has(l.text)) {
-        seenTexts.add(l.text);
-        lessonsInjected.push(l.text);
-        if (lessonsInjected.length === 5) break;
-      }
-    }
-    if (lessonsInjected.length < 5) {
-      for (const l of globLessons) {
-        if (!seenTexts.has(l.text)) {
-          seenTexts.add(l.text);
-          lessonsInjected.push(l.text);
-          if (lessonsInjected.length === 5) break;
-        }
-      }
-    }
+    lessonsInjected = await selectLessons(stores, "implementer", lessonTags, 5);
   }
 
   // 4. Token gate (implement only, skipped on dry run)
@@ -272,12 +218,10 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
   try {
     if (i.plan && config.project.approval === "per_plan") {
       const planFile = i.plan.file;
-      const hash = hashPlan(planContent!);
-      const currentFlags = await deps.flags.read();
-      const grant = validGrant(currentFlags, planFile, hash, deps.now());
-      if (!grant) {
+      const covered = await grants.covers(i.repoRoot, planFile, planContent!, i.plan.step);
+      if (!covered) {
         const pTitle = planTitle(planContent!, planFile);
-        const steps = i.plan.delegateSteps ?? [i.plan.step];
+        const steps = i.plan.delegateSteps ?? [];
         const approved = await deps.approver.plan({
           planFile,
           title: pTitle,
@@ -288,16 +232,7 @@ export async function prepareStartJob(deps: JobManagerDeps, i: StartInput): Prom
         if (!approved) {
           return { type: "result", result: { state: "denied", reason: "plan approval denied" } };
         }
-        const expiresAt = new Date(deps.now().getTime() + 24 * 60 * 60 * 1000).toISOString();
-        await deps.flags.update((f) => {
-          f.grants.push({
-            file: planFile,
-            hash,
-            steps,
-            approvedAt: deps.now().toISOString(),
-            expiresAt,
-          });
-        });
+        await grants.grant(i.repoRoot, planFile, planContent!, steps);
       }
     } else {
       const taskCard: TaskCard = {

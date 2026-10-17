@@ -5,15 +5,17 @@ import { git } from "../pipeline/exec.js";
 import type { JobSpec } from "../pipeline/index.js";
 import { isDirty, mergeCheck, removeWorktree, type Worktree } from "../pipeline/worktree.js";
 import { type PromoteCard } from "./approver.js";
-import { hashPlan, validGrant } from "./flags.js";
 import { LessonError, tagsFor, type Lesson } from "./lessons.js";
 import { emptyProgress, isTerminal, newJobId, type JobRecord } from "./store.js";
+import { DelegationPolicy, PlanGrants } from "./policy.js";
 import type { JobScheduler } from "./scheduler.js";
 import type { ActInput, JobManagerDeps } from "./manager.js";
 
 export interface ActionsContext {
   deps: JobManagerDeps;
   scheduler: JobScheduler;
+  policy?: DelegationPolicy;
+  grants?: PlanGrants;
 }
 
 export async function startFollowup(
@@ -31,9 +33,8 @@ export async function startFollowup(
           ? parent.plan.file
           : path.resolve(parent.repoRoot, parent.plan.file);
         const content = await readFile(planPath, "utf8");
-        const hash = hashPlan(content);
-        const flags = await ctx.deps.flags.read();
-        if (validGrant(flags, parent.plan.file, hash, ctx.deps.now())) {
+        const grants = ctx.grants ?? new PlanGrants(ctx.deps.flags, ctx.deps.now);
+        if (await grants.covers(parent.repoRoot, parent.plan.file, content, parent.plan.step)) {
           needApproval = false;
         }
       } catch {
@@ -175,32 +176,22 @@ export async function handleAct(
   }
 
   if (i.action === "quota_choice") {
-    if (i.choice === "retry") {
-      await ctx.deps.flags.update((f) => {
-        delete f.cooldownUntil;
-        delete f.cooldownText;
-      });
-    } else if (i.choice === "continue_without") {
-      await ctx.deps.flags.update((f) => ({ ...f, delegationPaused: true }));
-    }
+    const policy =
+      ctx.policy ?? new DelegationPolicy(ctx.deps.flags, ctx.deps.approver, ctx.deps.now);
+    await policy.choose(i.choice);
     return { state: "ok", choice: i.choice };
   }
 
   if (i.action === "resume_delegation") {
-    await ctx.deps.flags.update((f) => ({ ...f, delegationPaused: false }));
+    const policy =
+      ctx.policy ?? new DelegationPolicy(ctx.deps.flags, ctx.deps.approver, ctx.deps.now);
+    await policy.resume();
     return { state: "ok" };
   }
 
   if (i.action === "revoke_plan") {
-    const normFile = path.resolve(i.planFile);
-    const compareFile = process.platform === "win32" ? normFile.toLowerCase() : normFile;
-    await ctx.deps.flags.update((f) => {
-      f.grants = f.grants.filter((g) => {
-        const gNorm = path.resolve(g.file);
-        const gComp = process.platform === "win32" ? gNorm.toLowerCase() : gNorm;
-        return gComp !== compareFile;
-      });
-    });
+    const grants = ctx.grants ?? new PlanGrants(ctx.deps.flags, ctx.deps.now);
+    await grants.revoke(process.cwd(), i.planFile);
     return { state: "ok" };
   }
 

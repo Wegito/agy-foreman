@@ -56,7 +56,8 @@ export function planCardText(c: PlanCard): string {
   const estimatePart = c.estimate
     ? `\nDoing it myself: ~${formatK(c.estimate.directTokens)} tokens · Delegating: ~${formatK(c.estimate.delegateOverheadTokens)} tokens`
     : "";
-  return `Delegate plan "${c.title}" to Gemini 3.8 Flash?\n${c.planFile} · steps for Gemini: ${c.steps.join(", ")}${estimatePart}`;
+  const stepsPart = c.steps.length === 0 ? "all steps" : c.steps.join(", ");
+  return `Delegate plan "${c.title}" to Gemini 3.8 Flash?\n${c.planFile} · steps for Gemini: ${stepsPart}${estimatePart}`;
 }
 
 export function taskCardText(c: TaskCard): string {
