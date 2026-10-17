@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // and exited, so Claude Code timed out connecting. The built server must answer `initialize`.
 describe("built MCP server", () => {
   it("answers an MCP initialize request over stdio", async () => {
-    const out = mkdtempSync(path.join(os.tmpdir(), "agyo-serve-"));
+    // Inside the repo so the bundle's external imports resolve from node_modules.
+    const tmp = path.join(root, "test", ".tmp");
+    mkdirSync(tmp, { recursive: true });
+    const out = mkdtempSync(path.join(tmp, "serve-"));
     execFileSync(
       process.execPath,
       [path.join(root, "node_modules", "tsup", "dist", "cli-default.js"), "--out-dir", out],
