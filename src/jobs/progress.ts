@@ -81,8 +81,7 @@ export function renderProgressLine(rec: JobRecord): string {
       : "";
   const filePart = rec.progress.currentFile ? ` · ${rec.progress.currentFile}` : "";
   const elapsedPart = ` · ${formatDuration(rec.progress.elapsedSec)}`;
-  const etaPart =
-    rec.progress.etaSec !== undefined ? ` · ETA ~${formatDuration(rec.progress.etaSec)}` : "";
 
-  return `${rec.id}  ${bar} ${rec.progress.percent}% · ${rec.progress.phase}${checklistPart}${filePart}${elapsedPart}${etaPart}`;
+  // No time estimate on purpose: the percentage is the honest progress signal.
+  return `${rec.id}  ${bar} ${rec.progress.percent}% · ${rec.progress.phase}${checklistPart}${filePart}${elapsedPart}`;
 }

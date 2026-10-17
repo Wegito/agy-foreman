@@ -79,8 +79,9 @@ describe("renderProgressLine", () => {
       },
     };
     const line = renderProgressLine(rec);
-    for (const s of ["t-x", "64%", "run", "step 4/6", "src/a.ts", "4m12s", "ETA ~2m30s"])
+    for (const s of ["t-x", "64%", "run", "step 4/6", "src/a.ts", "4m12s"])
       expect(line).toContain(s);
+    expect(line).not.toContain("ETA");
     expect(line).toMatch(/[▓░]{20}/);
   });
 });

@@ -1,19 +1,31 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
 import { ClientModeApprover } from "./jobs/approver.js";
 import { renderProgressLine } from "./jobs/progress.js";
 import { isTerminal, JobStore, type JobRecord } from "./jobs/store.js";
-import { jobsDir } from "./paths.js";
+import { jobsDir, stateDir } from "./paths.js";
 import { runCommand, type ExecResult } from "./pipeline/exec.js";
 import { createRuntime } from "./runtime.js";
 import { createServer, ElicitationApprover } from "./server.js";
+import {
+  claudeSettingsPath,
+  installStatusLine,
+  previousStatusLine,
+  recentJobs,
+  renderStatusLine,
+  uninstallStatusLine,
+  type InstallResult,
+} from "./statusline.js";
 
 export interface Io {
   out: (s: string) => void;
   err: (s: string) => void;
+  /** Reads piped stdin (statusline only); omitted in tests. */
+  stdin?: () => Promise<string>;
   env: NodeJS.ProcessEnv;
   cwd: string;
 }
@@ -195,6 +207,43 @@ export async function doctor(d: {
   return checks;
 }
 
+function cliEntry(): string {
+  return fileURLToPath(import.meta.url);
+}
+
+function statusLineFiles(env: NodeJS.ProcessEnv): { settingsFile: string; wrapFile: string } {
+  return {
+    settingsFile: claudeSettingsPath(env),
+    wrapFile: path.join(stateDir({ env }), "statusline-wrap.json"),
+  };
+}
+
+function describeInstall(r: InstallResult): string {
+  if (r.state === "already_installed") return `status line: already installed (${r.settings})`;
+  if (r.state === "wrapped")
+    return `status line: installed in ${r.settings}, shown after your existing one (${r.previous})`;
+  return `status line: installed in ${r.settings} (restart Claude Code to see it; remove with: agy-orchestrator statusline --uninstall)`;
+}
+
+/** Reads all of stdin, giving up after `ms` (Claude Code closes it; a terminal never would). */
+export function readStdin(ms = 300): Promise<string> {
+  if (process.stdin.isTTY) return Promise.resolve("");
+  return new Promise((resolve) => {
+    let data = "";
+    const done = () => {
+      process.stdin.removeAllListeners("data");
+      resolve(data);
+    };
+    const t = setTimeout(done, ms);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (c: string) => (data += c));
+    process.stdin.on("end", () => {
+      clearTimeout(t);
+      done();
+    });
+  });
+}
+
 export async function main(argv: string[], io: Io): Promise<number> {
   const cmd = argv[0] ?? "serve";
 
@@ -282,6 +331,26 @@ export async function main(argv: string[], io: Io): Promise<number> {
     }
   }
 
+  if (cmd === "statusline") {
+    const files = statusLineFiles(io.env);
+    if (argv.includes("--install")) {
+      io.out(describeInstall(await installStatusLine({ ...files, entry: cliEntry() })));
+      return 0;
+    }
+    if (argv.includes("--uninstall")) {
+      io.out(`status line: ${await uninstallStatusLine(files)}`);
+      return 0;
+    }
+    // Claude Code pipes session JSON on stdin; only the wrapped previous status line needs it.
+    const stdin = io.stdin ? await io.stdin() : "";
+    const prev = await previousStatusLine(files.wrapFile, stdin, io.cwd);
+    const ours = renderStatusLine(await recentJobs(jobsDir({ env: io.env })), new Date(), {
+      color: io.env.NO_COLOR === undefined,
+    });
+    io.out([prev, ours].filter(Boolean).join("  │  "));
+    return 0;
+  }
+
   if (cmd === "init") {
     const targetFile = path.join(io.cwd, ".agy-orchestrator.json");
     if (existsSync(targetFile)) {
@@ -293,6 +362,15 @@ export async function main(argv: string[], io: Io): Promise<number> {
     io.out(
       "Register with Claude Code:\n  claude mcp add agy-orchestrator -- npx -y agy-orchestrator serve",
     );
+    // The status line is on by default; it only touches Claude Code settings when a home dir is known.
+    if (
+      !argv.includes("--no-statusline") &&
+      (io.env.AGYO_CLAUDE_SETTINGS || io.env.USERPROFILE || io.env.HOME)
+    ) {
+      io.out(
+        describeInstall(await installStatusLine({ ...statusLineFiles(io.env), entry: cliEntry() })),
+      );
+    }
     return 0;
   }
 
