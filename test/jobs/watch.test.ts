@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { watchJob } from "../../src/jobs/watch.js";
+import { waitForJob, watchJob } from "../../src/jobs/watch.js";
 import { JobManager, type JobManagerDeps } from "../../src/jobs/manager.js";
 import { JobStore, emptyProgress, type JobRecord } from "../../src/jobs/store.js";
 
@@ -68,5 +68,58 @@ describe("JobManager.peek", () => {
     expect((await s.read("t-1"))?.returnedChars).toBe(0);
     await m.get("t-1");
     expect((await s.read("t-1"))?.returnedChars).toBeGreaterThan(0);
+  });
+});
+
+describe("waitForJob", () => {
+  const iso = () => new Date().toISOString();
+
+  it("keeps waiting past the deadline while the job is still updating", async () => {
+    const s = store();
+    await s.write(rec({ updatedAt: iso() }));
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks++;
+      void s.write(rec({ updatedAt: iso(), ...(ticks >= 12 ? { state: "passed" } : {}) }));
+      if (ticks >= 12) clearInterval(timer);
+    }, 25);
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 200, intervalMs: 10 });
+    clearInterval(timer);
+    expect(final?.state).toBe("passed");
+  });
+
+  it("stops at the deadline when the job has been quiet for the stall time", async () => {
+    const s = store();
+    await s.write(rec()); // updatedAt long ago
+    const t0 = Date.now();
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 200, intervalMs: 10 });
+    expect(final?.state).toBe("running");
+    expect(Date.now() - t0).toBeLessThan(180);
+  });
+
+  it("gives up once updates stop for the stall time", async () => {
+    const s = store();
+    await s.write(rec({ updatedAt: iso() }));
+    let ticks = 0;
+    const timer = setInterval(() => {
+      if (++ticks > 4) return clearInterval(timer);
+      void s.write(rec({ updatedAt: iso() }));
+    }, 25);
+    const t0 = Date.now();
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 150, intervalMs: 10 });
+    clearInterval(timer);
+    expect(final?.state).toBe("running");
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+  });
+
+  it("without stallMs (an explicit --timeout-sec) stops at the deadline", async () => {
+    const s = store();
+    await s.write(rec({ updatedAt: iso() }));
+    const timer = setInterval(() => void s.write(rec({ updatedAt: iso() })), 20);
+    const t0 = Date.now();
+    const final = await waitForJob(s, "t-1", { timeoutMs: 60, intervalMs: 10 });
+    clearInterval(timer);
+    expect(final?.state).toBe("running");
+    expect(Date.now() - t0).toBeLessThan(150);
   });
 });

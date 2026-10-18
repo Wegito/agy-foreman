@@ -46,3 +46,25 @@ export async function watchJob(
     }
   }
 }
+
+/**
+ * `agy-foreman wait`: watchJob until `timeoutMs`, then, with `stallMs`, keeps waiting while the
+ * job is non-terminal and its record changed within the last `stallMs` (escalation can run two
+ * full attempts). Without `stallMs` (an explicit timeout) it stops at the deadline.
+ */
+export async function waitForJob(
+  store: JobStore,
+  jobId: string,
+  o: { timeoutMs: number; stallMs?: number; intervalMs?: number },
+): Promise<JobRecord | undefined> {
+  let rec = await watchJob(store, jobId, { timeoutMs: o.timeoutMs, intervalMs: o.intervalMs });
+  while (rec && o.stallMs !== undefined && !isTerminal(rec.state)) {
+    const quietMs = Date.now() - Date.parse(rec.updatedAt);
+    if (!(quietMs < o.stallMs)) break;
+    rec = await watchJob(store, jobId, {
+      timeoutMs: o.stallMs - quietMs,
+      intervalMs: o.intervalMs,
+    });
+  }
+  return rec;
+}

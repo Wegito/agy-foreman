@@ -7,7 +7,7 @@ import { loadConfig, loadRuntimeConfig } from "./config.js";
 import { ClientModeApprover } from "./jobs/approver.js";
 import { renderProgressLine } from "./jobs/progress.js";
 import { isTerminal, JobStore, type JobRecord } from "./jobs/store.js";
-import { watchJob } from "./jobs/watch.js";
+import { waitForJob, watchJob } from "./jobs/watch.js";
 import { jobsDir, stateDir } from "./paths.js";
 import { runCommand, type ExecResult } from "./pipeline/exec.js";
 import { createRuntime } from "./runtime.js";
@@ -25,6 +25,9 @@ import { quotaFile, refreshQuota, startQuotaRefresher } from "./usage-quota.js";
 export { readStdin };
 
 export const VERSION = "0.1.0";
+
+/** `wait` without --timeout-sec gives up on a job whose record has not changed for this long. */
+const WAIT_STALL_MS = 15 * 60_000;
 
 const HELP = `agy-foreman ${VERSION}: hand plan tasks from Claude Code to Gemini, merge only what passes your tests
 
@@ -335,11 +338,17 @@ export async function main(argv: string[], io: Io): Promise<number> {
     const id = argv[1];
     let timeoutSec = 3600;
     const timeoutIdx = argv.indexOf("--timeout-sec");
-    if (timeoutIdx !== -1 && argv[timeoutIdx + 1]) {
+    const explicit = timeoutIdx !== -1 && !!argv[timeoutIdx + 1];
+    if (explicit) {
       timeoutSec = parseInt(argv[timeoutIdx + 1], 10);
     }
     const store = new JobStore(jobsDir({ env: io.env }));
-    const rec = await watchJob(store, id, { timeoutMs: timeoutSec * 1000 });
+    // The default hour can be too short for an escalated job (two attempts): keep waiting while
+    // the job still updates, and give up once it has been quiet for 15 minutes.
+    const rec = await waitForJob(store, id, {
+      timeoutMs: timeoutSec * 1000,
+      ...(explicit ? {} : { stallMs: WAIT_STALL_MS }),
+    });
     if (!rec) {
       io.err(`job not found: ${id}`);
       return 3;
