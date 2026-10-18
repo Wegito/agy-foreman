@@ -362,6 +362,40 @@ describe("tier visibility", () => {
       /argon  ·  5h 71% 7d 12%$/,
     );
   });
+  it("renders a record written before tiers (no tier, model or attempts) like today", () => {
+    const { tier: _t, model: _m, ...old } = job({ id: "t-o" });
+    const legacy = old as JobRecord;
+    for (const quota of [flat, pooled]) {
+      expect(renderStatusLine([legacy], NOW, { color: false, quota })).toBe(
+        [
+          "agy",
+          "Incidents and the lesson store",
+          "› running",
+          "4m12s · 0 tok",
+          "5h 71% 7d 12%",
+        ].join(S),
+      );
+    }
+    expect(
+      renderStatusLine([{ ...legacy, state: "queued" }], NOW, { color: false, quota: flat }),
+    ).toBe(["agy", "queued", "Incidents and the lesson store", "5h 71% 7d 12%"].join(S));
+  });
+  it("shows the running attempt's tier and pool during escalation", () => {
+    const escalated = job({
+      id: "t-e",
+      currentAttempt: { tier: "strong", model: "gemini-4-argon-high" },
+    });
+    expect(renderStatusLine([escalated], NOW, { color: false, quota: pooled })).toBe(
+      [
+        "agy",
+        "Incidents and the lesson store",
+        "› running",
+        "4m12s · 0 tok",
+        "argon",
+        "5h 33%",
+      ].join(S),
+    );
+  });
   it("drops argon before the title when narrow", () => {
     const line = renderStatusLine([strong()], NOW, { color: false, columns: 70 });
     expect(line).not.toContain("argon");

@@ -13,6 +13,7 @@ import { FakeApprover } from "../../src/jobs/approver.js";
 import { parseProjectConfig, loadRuntimeConfig } from "../../src/config.js";
 import type { Envelope, JobSpec, PipelineDeps } from "../../src/pipeline/index.js";
 import { makeRepo, tmpRoot } from "../pipeline/repo.js";
+import { renderStatusLine } from "../../src/statusline.js";
 
 const EST = { directTokens: 20000, delegateOverheadTokens: 4000, reason: "multi-file" };
 
@@ -557,6 +558,85 @@ describe("attempts", () => {
       encoding: "utf8",
     });
     expect(branches.trim()).toBe("");
+  });
+
+  it("shows the running attempt's tier while escalated, and only finished attempts after", async () => {
+    let during: JobRecord | undefined;
+    let line = "";
+    const ctx = setup({
+      config: TIERS_CFG,
+      result: async (s) => {
+        if (!isStrong(s)) return envelope(s, "failed", { verify: VERIFY_FAIL });
+        during = (await ctx.deps.store.read(s.jobId.replace(/-a2$/, "")))!;
+        line = renderStatusLine([during], new Date(), { color: false });
+        return envelope(s, "passed");
+      },
+    });
+    const rec = await waitTerminal(ctx.deps, await ctx.m.start(impl(ctx.repo)));
+    await ctx.m.idle();
+    expect(during!.currentAttempt).toEqual({ tier: "strong", model: "gemini-4-argon-high" });
+    expect(during!.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "failed"]]);
+    expect(line).toContain("argon");
+    expect(rec.currentAttempt).toBeUndefined();
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([
+      ["fast", "failed"],
+      ["strong", "passed"],
+    ]);
+  });
+
+  it("a failing follow-up runs one attempt (no escalation)", async () => {
+    let calls = 0;
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) =>
+        calls++ === 0 ? envelope(s, "passed") : envelope(s, "failed", { verify: VERIFY_FAIL }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    const f = await m.act({ action: "followup", jobId: rec.id, feedback: "rename it" });
+    await m.idle();
+    expect(specs.map((s) => s.config.model)).toEqual(["gemini-3.8-flash", "gemini-3.8-flash"]);
+    const fr = (await deps.store.read(f.jobId as string))!;
+    expect(fr.state).toBe("failed");
+    expect(fr.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "failed"]]);
+  });
+
+  it("a follow-up still falls back to strong when fast hits the quota", async () => {
+    let calls = 0;
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) =>
+        calls++ === 0
+          ? envelope(s, "passed")
+          : isStrong(s)
+            ? envelope(s, "passed")
+            : envelope(s, "quota", { quota: { resetInSec: 600 } }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    await m.act({ action: "followup", jobId: rec.id, feedback: "rename it" });
+    await m.idle();
+    expect(specs.map((s) => s.config.model)).toEqual([
+      "gemini-3.8-flash",
+      "gemini-3.8-flash",
+      "gemini-4-argon",
+    ]);
+  });
+
+  it("ends cancelled when cancelled between attempts", async () => {
+    const ctx = setup({
+      config: TIERS_CFG,
+      result: async (s) => {
+        await ctx.m.act({ action: "cancel", jobId: s.jobId });
+        return envelope(s, "failed", { verify: VERIFY_FAIL });
+      },
+    });
+    const rec = await waitTerminal(ctx.deps, await ctx.m.start(impl(ctx.repo)));
+    await ctx.m.idle();
+    expect(ctx.specs).toHaveLength(1);
+    expect(rec.state).toBe("cancelled");
+    expect(rec.envelope!.state).toBe("cancelled");
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "failed"]]);
   });
 
   it("a manual follow-up continues on the last attempt's model", async () => {

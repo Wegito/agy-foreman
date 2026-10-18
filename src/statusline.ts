@@ -105,6 +105,10 @@ export function shownJob(jobs: JobRecord[]): JobRecord | undefined {
   return active.find((a) => a.state === "running") ?? active[0];
 }
 
+/** The running attempt's tier and model during escalation, else the job's starting ones. */
+const shownTier = (j: JobRecord) => j.currentAttempt?.tier ?? j.tier;
+const shownModel = (j: JobRecord): string | undefined => j.currentAttempt?.model ?? j.model;
+
 export type TaskState = "passed" | "running" | "failed" | "pending";
 
 /** State of each task 1..total of this job's plan: passed beats running beats failed. */
@@ -193,7 +197,9 @@ export function renderStatusLine(
     if (!q) return [];
     // The pool of the shown job's model; the flat fields are the Gemini Models pool (and the only
     // data an older cache has).
-    const pool = j ? poolOf(j.model) : "Gemini Models";
+    // Records written before tiers have no model: they read the Gemini Models pool, as before.
+    const model = j ? shownModel(j) : undefined;
+    const pool = model ? poolOf(model) : "Gemini Models";
     const win = q.pools?.[pool] ?? (!q.pools || pool === "Gemini Models" ? q : undefined);
     if (!win || (!win.fiveHour && !win.weekly)) return [];
     const level = (n: number) => (n >= 50 ? "32" : n >= 20 ? "33" : "31");
@@ -212,7 +218,7 @@ export function renderStatusLine(
 
   /** A strong job says so; fast jobs (today's only kind) add nothing. */
   const tierSegs = (j: JobRecord): Segment[] =>
-    j.tier === "strong" ? [seg("argon", dim("argon"), 50)] : [];
+    shownTier(j) === "strong" ? [seg("argon", dim("argon"), 50)] : [];
 
   const active = activeJobs(jobs);
   const j = shownJob(jobs);

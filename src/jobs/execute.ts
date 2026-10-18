@@ -179,6 +179,11 @@ export async function executeJob(
       attemptSpec.jobId,
     );
     const variant = modelFor(model, effort);
+    // Show the running attempt (status line, agy_get) while it runs, next to the finished ones.
+    record.attempts = [...attempts];
+    record.currentAttempt = { tier, model: variant };
+    record.updatedAt = ctx.deps.now().toISOString();
+    await ctx.write(record);
     let env: Envelope;
     try {
       env = await ctx.deps.runJob(attemptSpec, pd);
@@ -207,7 +212,13 @@ export async function executeJob(
       await policy.markCooling(pool, env.quota?.resetInSec, env.quota?.resetText);
       next = await pickUntried(tier);
       if (!next) quotaPool = pool;
-    } else if (env.state === "failed" && spec.kind === "implement" && spec.config.escalate) {
+    } else if (
+      env.state === "failed" &&
+      spec.kind === "implement" &&
+      spec.config.escalate &&
+      // A manual follow-up stays on its tier (spec 3.1); only quota fallback moves it.
+      !record.parentJobId
+    ) {
       next = await pickUntried(tierAbove(tier));
       const failures = env.verify?.failures.join(", ") || "see output";
       failureNote =
@@ -215,7 +226,12 @@ export async function executeJob(
         `Failing tests: ${failures}\n` +
         `Output tail:\n${(env.verify?.outputTail ?? "").slice(-1500)}`;
     }
-    if (!next || signal.aborted) break;
+    if (!next) break;
+    if (signal.aborted) {
+      // Cancelled between attempts: end as a single-attempt cancel does, not as the last state.
+      envelope = { ...env, state: "cancelled", reason: "Job was cancelled" };
+      break;
+    }
 
     await discardAttempt(env, spec.repoRoot, attemptSpec.jobId);
     record.progress.tokens = 0;
@@ -232,6 +248,7 @@ export async function executeJob(
     };
   }
   record.attempts = attempts;
+  delete record.currentAttempt;
   const last = attempts[attempts.length - 1];
 
   if (runError !== undefined) {

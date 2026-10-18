@@ -55,8 +55,10 @@ export interface JobRecord {
   estimate?: Estimate;
   parentJobId?: string;
   envelope?: Envelope;
-  /** Every attempt so far (escalation and quota fallback), in order. */
+  /** Every finished attempt so far (escalation and quota fallback), in order. */
   attempts?: Attempt[];
+  /** The attempt running right now (its tier and full model variant); gone once the job ends. */
+  currentAttempt?: { tier: Tier; model: string };
   returnedChars: number;
   incident?: Incident;
   errorReason?: string;
