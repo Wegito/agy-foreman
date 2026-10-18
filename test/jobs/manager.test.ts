@@ -512,6 +512,22 @@ describe("attempts", () => {
     ]);
   });
 
+  it("shows the quota card when a strong job hits the quota, though fast is free", async () => {
+    const approver = new FakeApprover({ quota: "wait" });
+    const { m, repo, specs, deps } = setup({
+      approver,
+      config: TIERS_CFG,
+      result: (s) => envelope(s, "quota", { quota: { resetInSec: 600 } }),
+    });
+    const rec = await waitTerminal(deps, await m.start({ ...impl(repo), tier: "strong" }));
+    await m.idle();
+    expect(specs.map((s) => s.config.model)).toEqual(["gemini-4-argon"]);
+    expect(Object.keys((await deps.flags.read()).cooldowns)).toEqual(["Gemini 4 Argon"]);
+    expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
+    expect(rec.state).toBe("quota");
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([["strong", "quota"]]);
+  });
+
   it("removes the losing attempt's worktree and branch", async () => {
     let losing: { path: string; branch: string } | undefined;
     const ctx = setup({

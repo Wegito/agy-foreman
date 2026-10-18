@@ -6,7 +6,7 @@ import type { StreamEvent } from "../agy/types.js";
 import { progressFraction } from "../pipeline/brief.js";
 import { toolSubject } from "../pipeline/toolcall-record.js";
 import { modelFor } from "../agy/run.js";
-import { TIERS, tierAbove, type Tier } from "../config.js";
+import { tierAbove, type Tier } from "../config.js";
 import { git } from "../pipeline/exec.js";
 import type { Attempt, Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
 import { removeWorktree, repoHash } from "../pipeline/worktree.js";
@@ -259,11 +259,12 @@ export async function executeJob(
     });
   } else if (envelope) {
     envelope = { ...envelope, jobId: record.id, attempts };
-    // The quota card is only for when every configured tier's pool is cooling. If one is still
-    // free (escalation went past it), the job stops in state quota without the card.
+    // The quota card is only for when every tier at or above the job's starting tier is cooling
+    // (never down: a strong job has no fast fallback). If one is still free (escalation went past
+    // it), the job stops in state quota without the card.
     let showQuotaCard = false;
     if (envelope.state === "quota") {
-      showQuotaCard = !(await policy.pickTier(tiers, TIERS[0]));
+      showQuotaCard = !(await policy.pickTier(tiers, attempts[0].tier));
       if (!showQuotaCard) {
         const pool = quotaPool ?? poolOf(model);
         const failed = attempts.filter((a) => a.state === "failed").pop();
