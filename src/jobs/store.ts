@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { KeyedQueue, readFileWithRetry, renameWithRetry } from "./fsutil.js";
-import type { Envelope, JobState } from "../pipeline/index.js";
+import type { Attempt, Envelope, JobState } from "../pipeline/index.js";
 import type { Incident } from "./incidents.js";
 
 export type JobPhase =
@@ -55,6 +55,8 @@ export interface JobRecord {
   estimate?: Estimate;
   parentJobId?: string;
   envelope?: Envelope;
+  /** Every attempt so far (escalation and quota fallback), in order. */
+  attempts?: Attempt[];
   returnedChars: number;
   incident?: Incident;
   errorReason?: string;

@@ -1,6 +1,6 @@
 import type { run } from "../agy/index.js";
 import type { AgyUsage, StreamEvent } from "../agy/types.js";
-import type { Effort, ProjectConfig, RuntimeConfig } from "../config.js";
+import type { Effort, ProjectConfig, RuntimeConfig, Tier } from "../config.js";
 import type { ContractTest } from "./contract.js";
 import type { VerifyReport } from "./verify.js";
 import { fenceUntrusted, buildEnvelope } from "./envelope-build.js";
@@ -78,6 +78,16 @@ export interface Envelope {
   conversationId?: string;
   usage?: AgyUsage;
   durationSec: number;
+  /** Every attempt of the job, in order; set by the job manager on the final envelope. */
+  attempts?: Attempt[];
+}
+
+/** One run of a job on one tier. `model` is the full variant, `modelFor(base, effort)`. */
+export interface Attempt {
+  tier: Tier;
+  model: string;
+  state: JobState;
+  reason?: string;
 }
 
 export async function runJob(spec: JobSpec, deps: PipelineDeps): Promise<Envelope> {

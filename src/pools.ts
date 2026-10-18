@@ -8,7 +8,7 @@ const NAMES: Record<string, string> = {
 };
 
 /** `gemini-4-argon-low` -> `gemini-4-argon`. */
-const stripEffort = (model: string) => model.replace(/-(low|medium|high)$/, "");
+export const stripEffort = (model: string) => model.replace(/-(low|medium|high)$/, "");
 
 export function poolOf(model: string): string {
   if (model.startsWith("gemini-4-argon")) return "Gemini 4 Argon";

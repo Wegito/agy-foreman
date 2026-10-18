@@ -1,11 +1,16 @@
-// Job execution and progress tracking for JobManager (phase/event listeners, completion, quota handling).
-import { readFileSync } from "node:fs";
+// Job execution and progress tracking for JobManager (phase/event listeners, attempts with escalation
+// and quota fallback, completion, quota handling).
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { StreamEvent } from "../agy/types.js";
 import { progressFraction } from "../pipeline/brief.js";
 import { toolSubject } from "../pipeline/toolcall-record.js";
-import type { Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
-import { repoHash } from "../pipeline/worktree.js";
+import { modelFor } from "../agy/run.js";
+import { tierAbove, type Tier } from "../config.js";
+import { git } from "../pipeline/exec.js";
+import type { Attempt, Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
+import { removeWorktree, repoHash } from "../pipeline/worktree.js";
+import { modelLabel, poolOf } from "../pools.js";
 import { classifyIncident } from "./incidents.js";
 import { computeProgress } from "./progress.js";
 import type { JobRecord } from "./store.js";
@@ -33,7 +38,7 @@ export async function executeJob(
   const jobStartTime = ctx.deps.now();
   let runStartTime: Date | undefined;
   let lastWriteTime = 0;
-  const worktreePath = path.join(
+  let worktreePath = path.join(
     ctx.deps.pipelineDeps.worktreeRoot,
     repoHash(spec.repoRoot),
     spec.jobId,
@@ -131,19 +136,99 @@ export async function executeJob(
     }
   };
 
+  const policy =
+    ctx.policy ?? new DelegationPolicy(ctx.deps.flags, ctx.deps.approver, ctx.deps.now);
+  const tiers = spec.config.tiers;
+  const effort = spec.effort ?? spec.config.effort;
+  const pd: PipelineDeps = {
+    ...ctx.deps.pipelineDeps,
+    onPhase,
+    onEvent,
+    signal,
+  };
+
+  // The first configured, non-cooling tier at or above `from` that this job has not tried yet.
+  const tried = new Set<Tier>();
+  const pickUntried = async (from: Tier | undefined) => {
+    while (from) {
+      const picked = await policy.pickTier(tiers, from);
+      if (!picked) return undefined;
+      if (!tried.has(picked.tier)) return picked;
+      from = tierAbove(picked.tier);
+    }
+    return undefined;
+  };
+
+  // Each attempt runs from the job's base commit; the final envelope is the last attempt's.
+  const attempts: Attempt[] = [];
+  let tier: Tier = record.tier ?? "fast";
+  let model = spec.config.model;
+  let attemptSpec = spec;
   let envelope: Envelope | undefined;
   let runError: unknown;
-  try {
-    const pd: PipelineDeps = {
-      ...ctx.deps.pipelineDeps,
-      onPhase,
-      onEvent,
-      signal,
+  let totalSec = 0;
+  let totalTokens: number | undefined;
+  let quotaPool: string | undefined;
+  for (;;) {
+    tried.add(tier);
+    worktreePath = path.join(
+      ctx.deps.pipelineDeps.worktreeRoot,
+      repoHash(spec.repoRoot),
+      attemptSpec.jobId,
+    );
+    const variant = modelFor(model, effort);
+    let env: Envelope;
+    try {
+      env = await ctx.deps.runJob(attemptSpec, pd);
+    } catch (err) {
+      runError = err;
+      attempts.push({ tier, model: variant, state: "error" });
+      break;
+    }
+    attempts.push({
+      tier,
+      model: variant,
+      state: env.state,
+      ...(env.reason ? { reason: env.reason } : {}),
+    });
+    envelope = env;
+    totalSec += env.durationSec;
+    if (env.usage?.totalTokens !== undefined) {
+      totalTokens = (totalTokens ?? 0) + env.usage.totalTokens;
+    }
+
+    let next: { tier: Tier; model: string } | undefined;
+    let failureNote = "";
+    if (env.state === "quota") {
+      const pool = poolOf(model);
+      await policy.markCooling(pool, env.quota?.resetInSec, env.quota?.resetText);
+      next = await pickUntried(tier);
+      if (!next) quotaPool = pool;
+    } else if (env.state === "failed" && spec.kind === "implement" && spec.config.escalate) {
+      next = await pickUntried(tierAbove(tier));
+      const failures = env.verify?.failures.join(", ") || "see output";
+      failureNote =
+        `\n\nA previous attempt on ${modelLabel(variant)} failed verification.\n` +
+        `Failing tests: ${failures}\n` +
+        `Output tail:\n${(env.verify?.outputTail ?? "").slice(-1500)}`;
+    }
+    if (!next || signal.aborted) break;
+
+    await discardAttempt(env, spec.repoRoot, attemptSpec.jobId);
+    record.progress.tokens = 0;
+    record.progress.toolSteps = 0;
+    tier = next.tier;
+    model = next.model;
+    attemptSpec = {
+      ...spec,
+      jobId: `${record.id}-a${attempts.length + 1}`,
+      config: { ...spec.config, model },
+      conversationId: undefined,
+      task: spec.task + failureNote,
     };
-    envelope = await ctx.deps.runJob(spec, pd);
-  } catch (err) {
-    runError = err;
   }
+  record.attempts = attempts;
+  const last = attempts[attempts.length - 1];
 
   if (runError !== undefined) {
     const reason = runError instanceof Error ? runError.message : String(runError);
@@ -164,8 +249,12 @@ export async function executeJob(
       estimate: record.estimate,
       returnedTokens: 0,
       at: ctx.deps.now().toISOString(),
+      tier: last.tier,
+      model: last.model,
+      attempts,
     });
   } else if (envelope) {
+    envelope = { ...envelope, jobId: record.id, attempts };
     const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
     if (incident) {
       record.incident = incident;
@@ -176,7 +265,7 @@ export async function executeJob(
     record.state = envelope.state;
     record.progress.phase = "done";
     record.progress.percent = 100;
-    record.progress.elapsedSec = envelope.durationSec;
+    record.progress.elapsedSec = totalSec;
     delete record.progress.etaSec;
     record.updatedAt = ctx.deps.now().toISOString();
     await ctx.write(record);
@@ -187,23 +276,26 @@ export async function executeJob(
       jobId: record.id,
       kind: record.kind,
       state: envelope.state,
-      durationSec: envelope.durationSec,
-      runSec: envelope.durationSec,
+      durationSec: totalSec,
+      runSec: totalSec,
       estimate: record.estimate,
       returnedTokens,
-      usageTotal: envelope.usage?.totalTokens,
+      usageTotal: totalTokens,
       at: ctx.deps.now().toISOString(),
       ...(incident ? { incident } : {}),
+      tier: last.tier,
+      model: last.model,
+      attempts,
     });
 
+    // Every configured tier is out of quota: today's quota card, on the last attempt's pool.
     if (envelope.state === "quota") {
-      const policy =
-        ctx.policy ?? new DelegationPolicy(ctx.deps.flags, ctx.deps.approver, ctx.deps.now);
       const choice = await policy.onQuota({
         resetInSec: envelope.quota?.resetInSec,
         resetText: envelope.quota?.resetText,
         pausedJobId: record.id,
         repoRoot: record.repoRoot,
+        pool: quotaPool ?? poolOf(model),
       });
       if (choice === "retry") {
         await ctx.startFollowup(
@@ -213,5 +305,21 @@ export async function executeJob(
         );
       }
     }
+  }
+}
+
+/** Removes a superseded attempt's worktree and branch. Best effort: a leftover is harmless. */
+async function discardAttempt(env: Envelope, repoRoot: string, jobId: string): Promise<void> {
+  try {
+    if (existsSync(env.worktreePath)) {
+      await removeWorktree(
+        { path: env.worktreePath, branch: env.branch, baseSha: env.baseSha, repoRoot, jobId },
+        { deleteBranch: true },
+      );
+    } else if (env.branch) {
+      await git(["branch", "-D", env.branch], repoRoot);
+    }
+  } catch {
+    // ignore
   }
 }

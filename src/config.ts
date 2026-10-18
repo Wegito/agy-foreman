@@ -7,6 +7,10 @@ export type Effort = (typeof EFFORTS)[number];
 /** Model tiers, in escalation order: a failed attempt climbs from `fast` to `strong`. */
 export type Tier = "fast" | "strong";
 export const TIERS: readonly Tier[] = ["fast", "strong"];
+/** The next tier up the escalation ladder, or undefined at the top. */
+export function tierAbove(t: Tier): Tier | undefined {
+  return TIERS[TIERS.indexOf(t) + 1];
+}
 export const CONFIG_FILE = ".agy-foreman.json";
 
 export class ConfigError extends Error {

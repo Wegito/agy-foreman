@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { JobManager, type JobManagerDeps } from "../../src/jobs/manager.js";
-import { JobStore } from "../../src/jobs/store.js";
+import { JobStore, isTerminal, type JobRecord } from "../../src/jobs/store.js";
+import { createWorktree } from "../../src/pipeline/worktree.js";
+import type { VerifyReport } from "../../src/pipeline/verify.js";
 import { Ledger } from "../../src/jobs/ledger.js";
 import { FlagStore } from "../../src/jobs/flags.js";
 import { FakeApprover } from "../../src/jobs/approver.js";
@@ -38,7 +41,7 @@ function envelope(
 function setup(
   o: {
     approver?: FakeApprover;
-    result?: (spec: JobSpec) => Envelope;
+    result?: (spec: JobSpec) => Envelope | Promise<Envelope>;
     config?: object;
     fail?: string;
   } = {},
@@ -299,6 +302,216 @@ describe("quota handling", () => {
     expect(specs).toHaveLength(2);
     expect(specs[1]).toMatchObject({ conversationId: "c1", baseRef: `agy/${specs[0].jobId}` });
     expect(specs[1].task).toContain("usage limit");
+  });
+});
+
+describe("attempts", () => {
+  const TIERS_CFG = { models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" } };
+  const VERIFY_FAIL: VerifyReport = {
+    exitCode: 1,
+    timedOut: false,
+    passed: false,
+    reportMissing: false,
+    newSkips: 0,
+    fewerTests: false,
+    protectedRestored: [],
+    tamper: [],
+    auditFlags: [],
+    failures: [],
+    outputTail: "AssertionError: expected 3 to be 4",
+  };
+  const isStrong = (s: JobSpec) => s.config.model.startsWith("gemini-4");
+  async function waitTerminal(
+    deps: JobManagerDeps,
+    r: Awaited<ReturnType<JobManager["start"]>>,
+  ): Promise<JobRecord> {
+    const id = (r as { jobId: string }).jobId;
+    for (let i = 0; i < 500; i++) {
+      const rec = await deps.store.read(id);
+      if (rec && isTerminal(rec.state)) return rec;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    throw new Error(`job ${id} did not finish`);
+  }
+  const impl = (repo: string) => ({
+    repoRoot: repo,
+    kind: "implement" as const,
+    task: "x",
+    estimate: EST,
+  });
+
+  it("retries a failed fast attempt once on strong, from scratch, and records both attempts", async () => {
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) =>
+        envelope(s, isStrong(s) ? "passed" : "failed", {
+          verify: { ...VERIFY_FAIL, failures: ["adds 2"] },
+          conversationId: "conv-1",
+        }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs.map((s) => s.config.model)).toEqual(["gemini-3.8-flash", "gemini-4-argon"]);
+    expect(specs[1].jobId).toBe(`${rec.id}-a2`);
+    expect(specs[1].conversationId).toBeUndefined();
+    expect(specs[1].task).toContain("Failing tests: adds 2");
+    expect(specs[1].task).toContain("expected 3 to be 4");
+    expect(specs[1].baseRef).toBe(specs[0].baseRef);
+    expect(rec.state).toBe("passed");
+    expect(rec.envelope!.jobId).toBe(rec.id);
+    expect(rec.envelope!.branch).toBe(`agy/${rec.id}-a2`);
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([
+      ["fast", "failed"],
+      ["strong", "passed"],
+    ]);
+    expect(rec.attempts!.map((a) => a.model)).toEqual([
+      "gemini-3.8-flash-high",
+      "gemini-4-argon-high",
+    ]);
+    expect(rec.envelope!.attempts).toEqual(rec.attempts);
+    expect(rec).toMatchObject({ tier: "fast", model: "gemini-3.8-flash" });
+    const entries = (await deps.ledger.entries()).filter((e) => e.jobId === rec.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ tier: "strong", model: "gemini-4-argon-high" });
+    expect(entries[0].attempts).toHaveLength(2);
+  });
+
+  it("does not escalate explore jobs, guard violations, or when escalate is false", async () => {
+    const explore = setup({ config: TIERS_CFG, result: (s) => envelope(s, "failed") });
+    await waitTerminal(
+      explore.deps,
+      await explore.m.start({ repoRoot: explore.repo, kind: "explore", task: "how?" }),
+    );
+    await explore.m.idle();
+    expect(explore.specs).toHaveLength(1);
+
+    const guard = setup({ config: TIERS_CFG, result: (s) => envelope(s, "guard_violation") });
+    const g = await waitTerminal(guard.deps, await guard.m.start(impl(guard.repo)));
+    await guard.m.idle();
+    expect(guard.specs).toHaveLength(1);
+    expect(g.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "guard_violation"]]);
+
+    const off = setup({
+      config: { ...TIERS_CFG, escalate: false },
+      result: (s) => envelope(s, "failed"),
+    });
+    await waitTerminal(off.deps, await off.m.start(impl(off.repo)));
+    await off.m.idle();
+    expect(off.specs).toHaveLength(1);
+  });
+
+  it("tries each tier at most once and stops at the top", async () => {
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) => envelope(s, "failed", { verify: VERIFY_FAIL }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(2);
+    expect(specs[1].task).toContain("Failing tests: see output");
+    expect(rec.state).toBe("failed");
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([
+      ["fast", "failed"],
+      ["strong", "failed"],
+    ]);
+  });
+
+  it("moves to strong when fast hits the quota, without showing the quota card", async () => {
+    const approver = new FakeApprover({ quota: "wait" });
+    const { m, repo, specs, deps } = setup({
+      approver,
+      config: TIERS_CFG,
+      result: (s) =>
+        isStrong(s) ? envelope(s, "passed") : envelope(s, "quota", { quota: { resetInSec: 600 } }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs.map((s) => s.config.model)).toEqual(["gemini-3.8-flash", "gemini-4-argon"]);
+    expect(approver.calls.filter((c) => c.kind === "quota")).toEqual([]);
+    expect(rec.state).toBe("passed");
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([
+      ["fast", "quota"],
+      ["strong", "passed"],
+    ]);
+    expect(Object.keys((await deps.flags.read()).cooldowns)).toContain("Gemini Models");
+  });
+
+  it("shows today's quota card when the last available tier hits the quota", async () => {
+    const approver = new FakeApprover({ quota: "wait" });
+    const { m, repo, specs, deps } = setup({
+      approver,
+      result: (s) => envelope(s, "quota", { quota: { resetInSec: 600, resetText: "10m" } }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(1);
+    expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
+    expect(rec.state).toBe("quota");
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "quota"]]);
+  });
+
+  it("cools both pools and shows one quota card when every tier hits the quota", async () => {
+    const approver = new FakeApprover({ quota: "wait" });
+    const { m, repo, specs, deps } = setup({
+      approver,
+      config: TIERS_CFG,
+      result: (s) => envelope(s, "quota", { quota: { resetInSec: 600 } }),
+    });
+    await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(2);
+    expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
+    const cooldowns = (await deps.flags.read()).cooldowns;
+    expect(Object.keys(cooldowns).sort()).toEqual(["Gemini 4 Argon", "Gemini Models"]);
+  });
+
+  it("removes the losing attempt's worktree and branch", async () => {
+    let losing: { path: string; branch: string } | undefined;
+    const ctx = setup({
+      config: TIERS_CFG,
+      result: async (s) => {
+        if (isStrong(s)) return envelope(s, "passed");
+        const wt = await createWorktree({
+          repoRoot: s.repoRoot,
+          jobId: s.jobId,
+          root: ctx.deps.pipelineDeps.worktreeRoot,
+        });
+        losing = { path: wt.path, branch: wt.branch! };
+        return envelope(s, "failed", {
+          worktreePath: wt.path,
+          branch: wt.branch,
+          baseSha: wt.baseSha,
+        });
+      },
+    });
+    const rec = await waitTerminal(ctx.deps, await ctx.m.start(impl(ctx.repo)));
+    await ctx.m.idle();
+    expect(losing).toBeDefined();
+    expect(losing!.branch).toBe(`agy/${rec.id}`);
+    expect(existsSync(losing!.path)).toBe(false);
+    const branches = execFileSync("git", ["branch", "--list", losing!.branch], {
+      cwd: ctx.repo,
+      encoding: "utf8",
+    });
+    expect(branches.trim()).toBe("");
+  });
+
+  it("a manual follow-up continues on the last attempt's model", async () => {
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) => envelope(s, "failed", { verify: VERIFY_FAIL }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(2);
+    const f = await m.act({ action: "followup", jobId: rec.id, feedback: "try again" });
+    await m.idle();
+    expect(specs[2].config.model).toBe("gemini-4-argon");
+    expect(specs[2].baseRef).toBe(`agy/${rec.id}-a2`);
+    expect(await deps.store.read(f.jobId as string)).toMatchObject({
+      tier: "strong",
+      model: "gemini-4-argon",
+    });
   });
 });
 

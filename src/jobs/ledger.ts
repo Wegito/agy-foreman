@@ -2,6 +2,8 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Estimate } from "./store.js";
 import type { Incident } from "./incidents.js";
+import type { Tier } from "../config.js";
+import type { Attempt } from "../pipeline/index.js";
 
 export interface LedgerEntry {
   jobId: string;
@@ -14,6 +16,10 @@ export interface LedgerEntry {
   usageTotal?: number;
   at: string;
   incident?: Incident;
+  /** The final attempt's tier and model, and every attempt. */
+  tier?: Tier;
+  model?: string;
+  attempts?: Attempt[];
 }
 
 export class Ledger {

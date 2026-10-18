@@ -8,6 +8,7 @@ import { type PromoteCard } from "./approver.js";
 import { LessonError, tagsFor, type Lesson } from "./lessons.js";
 import { emptyProgress, isTerminal, newJobId, type JobRecord } from "./store.js";
 import { DelegationPolicy, PlanGrants } from "./policy.js";
+import { stripEffort } from "../pools.js";
 import type { JobScheduler } from "./scheduler.js";
 import type { ActInput, JobManagerDeps } from "./manager.js";
 
@@ -25,9 +26,14 @@ export async function startFollowup(
   bypassApproval: boolean,
 ): Promise<{ state: "running" | "queued"; jobId: string }> {
   const config = ctx.deps.loadConfig(parent.repoRoot);
-  // A follow-up continues on the parent's model (records from before tiers have none).
-  const tier = parent.tier ?? "fast";
-  const model = parent.model ?? config.project.model;
+  // A follow-up continues on the parent's last attempt (records from before tiers have none).
+  // Attempt models are effort variants, so a later tier's base name is recovered from it.
+  const lastAttempt = parent.attempts?.[parent.attempts.length - 1];
+  const tier = lastAttempt?.tier ?? parent.tier ?? "fast";
+  const model =
+    lastAttempt && lastAttempt.tier !== parent.tier
+      ? stripEffort(lastAttempt.model)
+      : (parent.model ?? config.project.model);
   if (!bypassApproval) {
     let needApproval = true;
     if (parent.plan) {
