@@ -22,6 +22,8 @@ export interface QuotaCard {
   resetAt?: string;
   pausedJobId?: string;
   repoRoot?: string;
+  /** Every pool that is cooling down, when no tier could run the job. */
+  pools?: { pool: string; resetAt: string }[];
 }
 
 export type QuotaChoice = "retry" | "continue_without" | "wait";
@@ -70,7 +72,24 @@ export function taskCardText(c: TaskCard): string {
   return `${line1}${estimatePart}${reasonPart}`;
 }
 
+function poolResetLabel(resetAt: string): string {
+  const d = new Date(resetAt);
+  if (isNaN(d.getTime())) return "unknown";
+  const hhmm = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  const today = new Date();
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  return sameDay ? hhmm : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${hhmm}`;
+}
+
 export function quotaCardText(c: QuotaCard): string {
+  if (c.pools?.length) {
+    const list = c.pools.map((p) => `${p.pool} (resets ${poolResetLabel(p.resetAt)})`).join(", ");
+    const paused = c.pausedJobId ? ` Task ${c.pausedJobId} paused, partial work kept.` : "";
+    return `Quota reached: ${list}.${paused}`;
+  }
   let timeStr: string | undefined;
   if (c.resetAt) {
     const d = new Date(c.resetAt);

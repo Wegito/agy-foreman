@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { FlagStore, hashPlan, validGrant, type Flags } from "../../src/jobs/flags.js";
@@ -9,7 +9,7 @@ describe("flags", () => {
     const fs = new FlagStore(
       path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-flags-")), "flags.json"),
     );
-    expect(await fs.read()).toEqual({ delegationPaused: false, grants: [] });
+    expect(await fs.read()).toEqual({ delegationPaused: false, grants: [], cooldowns: {} });
     await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
         fs.update((f) => {
@@ -34,6 +34,7 @@ describe("flags", () => {
     const file = path.join(os.tmpdir(), "plan.md");
     const f: Flags = {
       delegationPaused: false,
+      cooldowns: {},
       grants: [
         {
           file,
@@ -49,5 +50,28 @@ describe("flags", () => {
     expect(validGrant(f, file, "h2", now)).toBeUndefined();
     expect(validGrant(f, file + "x", "h1", now)).toBeUndefined();
     expect(validGrant(f, file, "h1", new Date("2026-10-19T00:00:00Z"))).toBeUndefined();
+  });
+
+  it("reads a legacy single cooldown as the Gemini Models pool and drops it on update", async () => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-flags-")), "flags.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        cooldownUntil: "2026-10-17T13:00:00Z",
+        cooldownText: "1h",
+        delegationPaused: false,
+        grants: [],
+      }),
+    );
+    const store = new FlagStore(file);
+    const f = await store.read();
+    expect(f.cooldowns).toEqual({ "Gemini Models": { until: "2026-10-17T13:00:00Z", text: "1h" } });
+    await store.update((x) => {
+      x.delegationPaused = true;
+    });
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    expect(raw.cooldownUntil).toBeUndefined();
+    expect(raw.cooldownText).toBeUndefined();
+    expect(raw.cooldowns["Gemini Models"].until).toBe("2026-10-17T13:00:00Z");
   });
 });

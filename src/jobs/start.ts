@@ -41,8 +41,10 @@ export async function prepareStartJob(
   const policy = modules?.policy ?? new DelegationPolicy(deps.flags, deps.approver, deps.now);
   const grants = modules?.grants ?? new PlanGrants(deps.flags, deps.now);
 
+  const config = deps.loadConfig(i.repoRoot);
+
   // 1-2. Policy check
-  const check = await policy.check(i.repoRoot);
+  const check = await policy.check(i.repoRoot, config.project.tiers, "fast");
   if (!check.ok) {
     return {
       type: "result",
@@ -121,7 +123,6 @@ export async function prepareStartJob(
   }
 
   // 4. Token gate (implement only, skipped on dry run)
-  const config = deps.loadConfig(i.repoRoot);
   // Before the approval card: a job whose contract tests can't be checked would only be refused.
   if (i.kind === "implement" && !i.dryRun && contractTests?.length && !config.project.testReport) {
     return { type: "result", result: { state: "refused", reason: NEEDS_REPORT } };

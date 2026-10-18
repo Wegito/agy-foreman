@@ -206,7 +206,7 @@ export class JobManager {
   }
 
   async status(repoRoot?: string): Promise<Record<string, unknown>> {
-    const { delegation, cooldown } = await this.policy.state();
+    const { delegation, cooldowns } = await this.policy.state();
 
     const allJobs = await this.deps.store.list();
     const filteredJobs = repoRoot
@@ -240,7 +240,7 @@ export class JobManager {
 
     return {
       delegation,
-      ...(cooldown ? { cooldown } : {}),
+      ...(cooldowns.length ? { cooldowns } : {}),
       running,
       queued,
       today,

@@ -2,6 +2,8 @@ import path from "node:path";
 import type { Approver, QuotaChoice } from "./approver.js";
 import { FlagStore, hashPlan } from "./flags.js";
 import type { StartResult } from "./manager.js";
+import { TIERS, type ProjectConfig, type Tier } from "../config.js";
+import { poolOf } from "../pools.js";
 
 export class DelegationPolicy {
   constructor(
@@ -10,10 +12,47 @@ export class DelegationPolicy {
     private now: () => Date,
   ) {}
 
-  /** Before a new job. Paused → refused. Cooling down → shows the quota card:
-   *  retry clears the cooldown and returns ok; continue_without pauses and returns refused
-   *  ("continue without Gemini"); wait/unavailable returns the "quota" StartResult. */
-  async check(repoRoot?: string): Promise<{ ok: true } | { ok: false; result: StartResult }> {
+  /** Picks the first configured tier at or above `from` whose pool is not cooling down.
+   *  Never moves down: a strong request does not fall back to fast. */
+  async pickTier(
+    tiers: ProjectConfig["tiers"],
+    from: Tier,
+  ): Promise<{ tier: Tier; model: string } | undefined> {
+    const flags = await this.flags.read();
+    for (const tier of TIERS.slice(TIERS.indexOf(from))) {
+      const model = tiers[tier];
+      if (!model) continue;
+      if (!this.isCooling(flags.cooldowns[poolOf(model)])) return { tier, model };
+    }
+    return undefined;
+  }
+
+  private isCooling(c?: { until: string }): boolean {
+    return !!c && new Date(c.until).getTime() > this.now().getTime();
+  }
+
+  /** Stores a cooldown for one pool of max(60 s, resetInSec ?? 900 s). */
+  async markCooling(pool: string, resetInSec?: number, resetText?: string): Promise<void> {
+    const cooldownSec = Math.max(60, resetInSec ?? 900);
+    const until = new Date(this.now().getTime() + cooldownSec * 1000).toISOString();
+    const text = resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
+    await this.flags.update((f) => {
+      f.cooldowns[pool] = { until, text };
+    });
+  }
+
+  /** Before a new job. Paused → refused. Otherwise picks a tier at or above `requested`
+   *  whose pool is not cooling down (a note says so when it differs from `requested`).
+   *  When none is free it shows the quota card: retry clears the cooldowns and returns ok;
+   *  continue_without pauses and returns refused ("continue without Gemini"); wait/unavailable
+   *  returns the "quota" StartResult. */
+  async check(
+    repoRoot: string | undefined,
+    tiers: ProjectConfig["tiers"],
+    requested: Tier,
+  ): Promise<
+    { ok: true; tier: Tier; model: string; note?: string } | { ok: false; result: StartResult }
+  > {
     const flags = await this.flags.read();
     if (flags.delegationPaused) {
       return {
@@ -25,74 +64,96 @@ export class DelegationPolicy {
       };
     }
 
-    if (flags.cooldownUntil && new Date(flags.cooldownUntil).getTime() > this.now().getTime()) {
-      let choice: QuotaChoice | "unavailable";
-      try {
-        choice = await this.approver.quota({
-          resetText: flags.cooldownText,
-          resetAt: flags.cooldownUntil,
-          repoRoot,
-        });
-      } catch {
-        choice = "unavailable";
-      }
+    // A tier the project does not configure cannot be requested; start from fast.
+    const from: Tier = tiers[requested] ? requested : "fast";
+    const picked = await this.pickTier(tiers, from);
+    if (picked) return { ok: true, ...this.withNote(picked, tiers, from) };
 
-      if (choice === "retry") {
-        await this.choose("retry");
-        return { ok: true };
-      } else if (choice === "continue_without") {
-        await this.choose("continue_without");
-        return {
-          ok: false,
-          result: {
-            state: "refused",
-            reason: "continue without Gemini",
-          },
-        };
-      } else {
-        // "wait" or "unavailable"
-        return {
-          ok: false,
-          result: {
-            state: "quota",
-            reason: "Gemini quota active",
-            quota: {
-              resetText: flags.cooldownText,
-              resetAt: flags.cooldownUntil,
-            },
-            options: ["retry", "continue_without", "wait"],
-          },
-        };
-      }
+    const cooling = TIERS.slice(TIERS.indexOf(from))
+      .map((t) => tiers[t])
+      .filter((m): m is string => !!m)
+      .map((m) => poolOf(m))
+      .filter((pool, i, all) => all.indexOf(pool) === i)
+      .map((pool) => ({ pool, c: flags.cooldowns[pool] }))
+      .filter((x) => this.isCooling(x.c));
+    const pools = cooling.map((x) => ({ pool: x.pool, resetAt: x.c.until }));
+    const first = [...cooling].sort((a, b) => a.c.until.localeCompare(b.c.until))[0].c;
+
+    let choice: QuotaChoice | "unavailable";
+    try {
+      choice = await this.approver.quota({
+        resetText: first.text,
+        resetAt: first.until,
+        repoRoot,
+        pools,
+      });
+    } catch {
+      choice = "unavailable";
     }
 
-    return { ok: true };
+    if (choice === "retry") {
+      await this.choose("retry");
+      const again = await this.pickTier(tiers, from);
+      if (again) return { ok: true, ...this.withNote(again, tiers, from) };
+      return { ok: true, tier: from, model: tiers[from] as string };
+    } else if (choice === "continue_without") {
+      await this.choose("continue_without");
+      return {
+        ok: false,
+        result: {
+          state: "refused",
+          reason: "continue without Gemini",
+        },
+      };
+    }
+    // "wait" or "unavailable"
+    return {
+      ok: false,
+      result: {
+        state: "quota",
+        reason: "Gemini quota active",
+        quota: {
+          resetText: first.text,
+          resetAt: first.until,
+        },
+        options: ["retry", "continue_without", "wait"],
+      },
+    };
   }
 
-  /** After a run hit the quota: stores a cooldown of max(60 s, resetInSec ?? 900 s), shows the
-   *  quota card, applies the choice (same as choose) and returns it. Never throws. */
+  private withNote(
+    picked: { tier: Tier; model: string },
+    tiers: ProjectConfig["tiers"],
+    from: Tier,
+  ): { tier: Tier; model: string; note?: string } {
+    if (picked.tier === from) return picked;
+    const skipped = poolOf(tiers[from] as string);
+    return {
+      ...picked,
+      note: `${skipped} is cooling down; running on ${picked.tier} (${picked.model})`,
+    };
+  }
+
+  /** After a run hit the quota: stores a cooldown of max(60 s, resetInSec ?? 900 s) on the
+   *  pool (Gemini Models when the caller gives none), shows the quota card, applies the choice
+   *  (same as choose) and returns it. Never throws. */
   async onQuota(o: {
     resetInSec?: number;
     resetText?: string;
     pausedJobId?: string;
     repoRoot?: string;
+    pool?: string;
   }): Promise<QuotaChoice | "unavailable"> {
     try {
-      const resetInSec = o.resetInSec ?? 900;
-      const cooldownSec = Math.max(60, resetInSec);
-      const cooldownUntil = new Date(this.now().getTime() + cooldownSec * 1000).toISOString();
-      const cooldownText = o.resetText ?? `${Math.ceil(cooldownSec / 60)}m`;
-
-      await this.flags.update((f) => {
-        f.cooldownUntil = cooldownUntil;
-        f.cooldownText = cooldownText;
-      });
+      const pool = o.pool ?? "Gemini Models";
+      await this.markCooling(pool, o.resetInSec, o.resetText);
+      const cd = (await this.flags.read()).cooldowns[pool];
 
       let choice: QuotaChoice | "unavailable" = "unavailable";
       try {
         choice = await this.approver.quota({
-          resetText: cooldownText,
-          resetAt: cooldownUntil,
+          resetText: cd.text,
+          resetAt: cd.until,
           pausedJobId: o.pausedJobId,
           repoRoot: o.repoRoot,
         });
@@ -109,12 +170,11 @@ export class DelegationPolicy {
     }
   }
 
-  /** retry: clear cooldown. continue_without: pause delegation. wait: nothing. */
+  /** retry: clear every pool's cooldown. continue_without: pause delegation. wait: nothing. */
   async choose(choice: QuotaChoice): Promise<void> {
     if (choice === "retry") {
       await this.flags.update((f) => {
-        delete f.cooldownUntil;
-        delete f.cooldownText;
+        f.cooldowns = {};
       });
     } else if (choice === "continue_without") {
       await this.flags.update((f) => {
@@ -131,17 +191,14 @@ export class DelegationPolicy {
 
   async state(): Promise<{
     delegation: "active" | "paused";
-    cooldown?: { until: string; resetText?: string };
+    cooldowns: { pool: string; until: string; resetText?: string }[];
   }> {
     const flags = await this.flags.read();
-    const delegation = flags.delegationPaused ? "paused" : "active";
-    const cooldown =
-      flags.cooldownUntil && new Date(flags.cooldownUntil).getTime() > this.now().getTime()
-        ? { until: flags.cooldownUntil, resetText: flags.cooldownText }
-        : undefined;
     return {
-      delegation,
-      ...(cooldown ? { cooldown } : {}),
+      delegation: flags.delegationPaused ? "paused" : "active",
+      cooldowns: Object.entries(flags.cooldowns)
+        .filter(([, c]) => this.isCooling(c))
+        .map(([pool, c]) => ({ pool, until: c.until, resetText: c.text })),
     };
   }
 }

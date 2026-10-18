@@ -12,8 +12,8 @@ export interface PlanGrant {
 }
 
 export interface Flags {
-  cooldownUntil?: string;
-  cooldownText?: string;
+  /** Quota cooldowns keyed by agy pool name (see poolOf). */
+  cooldowns: Record<string, { until: string; text?: string }>;
   delegationPaused: boolean;
   grants: PlanGrant[];
 }
@@ -45,16 +45,27 @@ export class FlagStore {
   async read(): Promise<Flags> {
     try {
       const data = await readFile(this.file, "utf8");
-      const parsed = JSON.parse(data) as Partial<Flags>;
+      const parsed = JSON.parse(data) as Partial<Flags> & {
+        cooldownUntil?: string;
+        cooldownText?: string;
+      };
+      const cooldowns = { ...parsed.cooldowns };
+      // Legacy single cooldown: it was always the Gemini Models pool. It disappears from
+      // the file on the next update, since update() writes what read() returns.
+      if (parsed.cooldownUntil && !cooldowns["Gemini Models"]) {
+        cooldowns["Gemini Models"] = {
+          until: parsed.cooldownUntil,
+          ...(parsed.cooldownText ? { text: parsed.cooldownText } : {}),
+        };
+      }
       return {
         delegationPaused: parsed.delegationPaused ?? false,
         grants: parsed.grants ?? [],
-        cooldownUntil: parsed.cooldownUntil,
-        cooldownText: parsed.cooldownText,
+        cooldowns,
       };
     } catch (err: unknown) {
       if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
-        return { delegationPaused: false, grants: [] };
+        return { delegationPaused: false, grants: [], cooldowns: {} };
       }
       throw err;
     }

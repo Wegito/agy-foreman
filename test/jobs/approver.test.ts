@@ -46,6 +46,25 @@ describe("card texts", () => {
     expect(t).toContain("Task t-1 paused, partial work kept.");
     expect(t).not.toMatch(/account/i);
   });
+  it("lists the pools when the card has them", () => {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 60_000);
+    const hh = soon.getHours().toString().padStart(2, "0");
+    const mm = soon.getMinutes().toString().padStart(2, "0");
+    const later = new Date(now.getTime() + 3 * 86_400_000);
+    const day = later.toLocaleDateString("en-US", { weekday: "short" });
+    const t = quotaCardText({
+      pools: [
+        { pool: "Gemini Models", resetAt: soon.toISOString() },
+        { pool: "Gemini 4 Argon", resetAt: later.toISOString() },
+      ],
+    });
+    expect(t).toMatch(
+      new RegExp(
+        String.raw`^Quota reached: Gemini Models \(resets ${hh}:${mm}\), Gemini 4 Argon \(resets ${day} \d\d:\d\d\)\.`,
+      ),
+    );
+  });
 });
 
 describe("approvers", () => {
