@@ -1,0 +1,881 @@
+<title>Foreman Signal Box</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a signal-box mimic panel. One wide track diagram (the job's life) on top,
+   three "instrument" panels below: the gate interlocking, the contract lab, the learning loop. */
+:root {
+  --panel: #d6ddd5;        /* painted mimic-panel steel */
+  --panel-2: #c8d0c6;      /* recessed instrument */
+  --ink: #18201c;          /* track and type */
+  --ink-soft: #4b5a52;
+  --rule: #a7b2a8;
+  --brass: #8a5a14;        /* controls, the one accent */
+  --brass-ink: #fff8ec;
+  --lamp-red: #c8321f;
+  --lamp-amber: #c98a06;
+  --lamp-green: #1f8a4c;
+  --lamp-cyan: #13809b;
+  --lamp-off: #9aa59c;
+  --glow: 0.0;
+  --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --panel: #111714; --panel-2: #18201c; --ink: #d7e1d9; --ink-soft: #93a399; --rule: #2d3a33;
+    --brass: #e0a64d; --brass-ink: #1a1206;
+    --lamp-red: #ff5a43; --lamp-amber: #ffc23d; --lamp-green: #3ddc84; --lamp-cyan: #39c6e6; --lamp-off: #39463f;
+    --glow: 1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --panel: #111714; --panel-2: #18201c; --ink: #d7e1d9; --ink-soft: #93a399; --rule: #2d3a33;
+  --brass: #e0a64d; --brass-ink: #1a1206;
+  --lamp-red: #ff5a43; --lamp-amber: #ffc23d; --lamp-green: #3ddc84; --lamp-cyan: #39c6e6; --lamp-off: #39463f;
+  --glow: 1; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--panel); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: 0.01em; }
+h1 { font-size: clamp(2.6rem, 7vw, 5rem); font-weight: 900; line-height: 0.92; text-transform: uppercase; }
+h2 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); font-weight: 800; text-transform: uppercase; }
+h3 { font-size: 1.25rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+p { margin: 0; max-width: 65ch; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+.lede { color: var(--ink-soft); font-size: 1.08rem; }
+
+/* header */
+.head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; }
+.head .plate { border: 2px solid var(--ink); padding: 10px 14px; font-family: var(--mono); font-size: 0.78rem; line-height: 1.6; min-width: 0; }
+.plate b { font-weight: 600; }
+@media (max-width: 760px) { .head { grid-template-columns: 1fr; } }
+
+/* status line */
+.statusline { font-family: var(--mono); font-size: 0.86rem; background: var(--ink); color: var(--panel); padding: 10px 14px; overflow-x: auto; white-space: nowrap; border-radius: 3px; }
+.statusline .m-pass { color: var(--lamp-green); } .statusline .m-run { color: var(--lamp-cyan); } .statusline .m-fail { color: var(--lamp-red); } .statusline .m-off { opacity: 0.45; }
+
+/* controls */
+.btn { font: 600 0.9rem var(--body); border: 2px solid var(--ink); background: transparent; color: var(--ink); padding: 7px 12px; border-radius: 2px; cursor: pointer; letter-spacing: 0.02em; }
+.btn:hover { background: var(--panel-2); }
+.btn.primary { background: var(--brass); border-color: var(--brass); color: var(--brass-ink); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.btn:focus-visible, input:focus-visible, select:focus-visible, .station:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* the board */
+.board { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0; border: 2px solid var(--ink); background: var(--panel-2); }
+@media (max-width: 980px) { .board { grid-template-columns: 1fr; } }
+.board-main { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.board-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; border-bottom: 2px solid var(--ink); }
+.board-bar label { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+select, input[type="text"] { font: 500 0.95rem var(--body); background: var(--panel); color: var(--ink); border: 2px solid var(--ink); border-radius: 2px; padding: 6px 8px; min-width: 0; }
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; min-width: 1080px; width: 100%; height: auto; }
+.log { border-top: 2px solid var(--ink); font-family: var(--mono); font-size: 0.78rem; height: 132px; overflow-y: auto; padding: 8px 12px; background: var(--panel); }
+.log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .t { color: var(--ink-soft); }
+.log .ok { color: var(--lamp-green); } .log .bad { color: var(--lamp-red); } .log .warn { color: var(--lamp-amber); } .log .run { color: var(--lamp-cyan); }
+.detail { border-left: 2px solid var(--ink); padding: 16px; display: grid; gap: 12px; align-content: start; background: var(--panel); min-width: 0; }
+@media (max-width: 980px) { .detail { border-left: 0; border-top: 2px solid var(--ink); } }
+.detail dl { margin: 0; display: grid; gap: 8px; }
+.detail dt { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+.detail dd { margin: 0; font-size: 0.95rem; }
+.chip { display: inline-block; font-family: var(--mono); font-size: 0.72rem; padding: 2px 7px; border: 1.5px solid currentColor; border-radius: 2px; margin: 2px 4px 2px 0; }
+.chip.red { color: var(--lamp-red); } .chip.green { color: var(--lamp-green); } .chip.amber { color: var(--lamp-amber); } .chip.cyan { color: var(--lamp-cyan); }
+
+/* svg styling via tokens */
+.trk { stroke: var(--ink); stroke-width: 5; fill: none; stroke-linecap: square; }
+.trk.spur { stroke-width: 3.5; }
+.trk.loop { stroke-dasharray: 2 7; stroke-width: 3.5; stroke-linecap: round; }
+.trk.bus { stroke: var(--ink-soft); stroke-width: 2; stroke-dasharray: 6 5; }
+.trk.lit { stroke: var(--lamp-cyan); }
+.sleeper { stroke: var(--rule); stroke-width: 2; }
+.station { cursor: pointer; }
+.station .box { fill: var(--panel); stroke: var(--ink); stroke-width: 2.5; }
+.station:hover .box, .station.sel .box { fill: var(--panel-2); stroke: var(--brass); }
+.station .name { font-family: var(--display); font-weight: 800; font-size: 15px; fill: var(--ink); text-transform: uppercase; letter-spacing: 0.04em; }
+.station .sub { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-soft); }
+.lamp { stroke: var(--ink); stroke-width: 1.5; fill: var(--lamp-off); transition: fill 0.25s; }
+.lamp.red { fill: var(--lamp-red); filter: drop-shadow(0 0 calc(var(--glow) * 6px) var(--lamp-red)); }
+.lamp.green { fill: var(--lamp-green); filter: drop-shadow(0 0 calc(var(--glow) * 6px) var(--lamp-green)); }
+.lamp.amber { fill: var(--lamp-amber); filter: drop-shadow(0 0 calc(var(--glow) * 6px) var(--lamp-amber)); }
+.lamp.cyan { fill: var(--lamp-cyan); filter: drop-shadow(0 0 calc(var(--glow) * 6px) var(--lamp-cyan)); }
+.buffer { fill: var(--ink); }
+.siding-label { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); font-weight: 600; }
+.siding-sub { font-family: var(--mono); font-size: 9px; fill: var(--ink-soft); }
+.zone { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em; fill: var(--ink-soft); text-transform: uppercase; }
+.train rect { fill: var(--brass); stroke: var(--ink); stroke-width: 2; }
+.train text { font-family: var(--mono); font-size: 9px; font-weight: 600; fill: var(--brass-ink); }
+
+/* instrument panels */
+.instruments { display: grid; gap: 40px; }
+.panel { border: 2px solid var(--ink); background: var(--panel-2); display: grid; }
+.panel-head { padding: 16px; border-bottom: 2px solid var(--ink); display: grid; gap: 6px; }
+.panel-body { padding: 16px; display: grid; gap: 16px; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+
+/* gate */
+.cmdline { display: flex; gap: 0; border: 2px solid var(--ink); background: var(--panel); }
+.cmdline span { font-family: var(--mono); padding: 8px 10px; color: var(--ink-soft); border-right: 2px solid var(--ink); }
+.cmdline input { border: 0; flex: 1; font-family: var(--mono); font-size: 0.95rem; background: transparent; padding: 8px 10px; min-width: 0; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { font-family: var(--mono); font-size: 0.74rem; border: 1.5px solid var(--rule); background: var(--panel); color: var(--ink); padding: 4px 8px; border-radius: 2px; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.presets button:hover { border-color: var(--brass); }
+.verdict { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; border: 2px solid var(--ink); background: var(--panel); padding: 14px; }
+.big-lamp { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--ink); background: var(--lamp-off); transition: background 0.2s, box-shadow 0.2s; }
+.big-lamp.green { background: var(--lamp-green); box-shadow: 0 0 calc(var(--glow) * 22px) var(--lamp-green); }
+.big-lamp.red { background: var(--lamp-red); box-shadow: 0 0 calc(var(--glow) * 22px) var(--lamp-red); }
+.big-lamp.amber { background: var(--lamp-amber); box-shadow: 0 0 calc(var(--glow) * 22px) var(--lamp-amber); }
+.verdict strong { font-family: var(--display); font-size: 1.6rem; text-transform: uppercase; line-height: 1; display: block; }
+.verdict p { font-family: var(--mono); font-size: 0.82rem; overflow-wrap: anywhere; }
+.ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; counter-reset: rung; }
+.ladder li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 6px 8px; background: var(--panel); border: 1.5px solid var(--rule); font-size: 0.92rem; }
+.ladder li::before { counter-increment: rung; content: counter(rung); font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft); }
+.ladder li .st { font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.ladder li.pass .st { color: var(--lamp-green); } .ladder li.fail { border-color: var(--lamp-red); } .ladder li.fail .st { color: var(--lamp-red); } .ladder li.skip { opacity: 0.5; }
+.ladder li small { display: block; color: var(--ink-soft); font-family: var(--mono); font-size: 0.74rem; overflow-wrap: anywhere; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+
+/* contract lab */
+.cases { display: grid; gap: 8px; }
+.case { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; background: var(--panel); border: 1.5px solid var(--rule); padding: 8px 10px; }
+.case .nm { font-family: var(--mono); font-size: 0.8rem; overflow-wrap: anywhere; }
+.case .nm small { display: block; color: var(--ink-soft); }
+.seg { display: inline-flex; border: 2px solid var(--ink); }
+.seg button { font: 600 0.74rem var(--mono); border: 0; background: transparent; color: var(--ink); padding: 4px 7px; cursor: pointer; text-transform: uppercase; }
+.seg button + button { border-left: 1.5px solid var(--ink); }
+.seg button[aria-pressed="true"].pass { background: var(--lamp-green); color: #fff; }
+.seg button[aria-pressed="true"].fail { background: var(--lamp-red); color: #fff; }
+.seg button[aria-pressed="true"].skip { background: var(--lamp-amber); color: #1b1300; }
+.seg button[aria-pressed="true"].miss { background: var(--ink); color: var(--panel); }
+.versus { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 520px) { .versus { grid-template-columns: 1fr; } }
+.vcard { border: 2px solid var(--ink); background: var(--panel); padding: 12px; display: grid; gap: 6px; }
+.vcard.old { border-style: dashed; opacity: 0.85; }
+.vcard .tag { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+.vcard .res { font-family: var(--display); font-weight: 800; font-size: 1.35rem; text-transform: uppercase; display: flex; gap: 8px; align-items: center; }
+.vcard .res i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); display: inline-block; background: var(--lamp-off); }
+.vcard .res i.green { background: var(--lamp-green); } .vcard .res i.red { background: var(--lamp-red); } .vcard .res i.amber { background: var(--lamp-amber); }
+.vcard p { font-size: 0.86rem; color: var(--ink-soft); }
+.danger-note { font-family: var(--mono); font-size: 0.78rem; color: var(--lamp-red); }
+
+/* learning */
+.loop { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.inc { background: var(--panel); border: 1.5px solid var(--rule); padding: 10px; display: grid; gap: 4px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.inc:hover, .inc[aria-pressed="true"] { border-color: var(--brass); }
+.inc b { font-family: var(--mono); font-size: 0.8rem; }
+.inc span { font-size: 0.86rem; color: var(--ink-soft); }
+.meter { display: flex; gap: 6px; }
+.meter i { width: 28px; height: 10px; border: 2px solid var(--ink); background: transparent; }
+.meter i.on { background: var(--brass); }
+.promote { border: 2px solid var(--brass); background: var(--panel); padding: 14px; display: grid; gap: 10px; }
+.foot { font-family: var(--mono); font-size: 0.76rem; color: var(--ink-soft); display: flex; flex-wrap: wrap; gap: 6px 18px; border-top: 2px solid var(--ink); padding-top: 14px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div style="display:grid; gap:12px; min-width:0">
+      <div class="eyebrow">agy-foreman · interlocking diagram · rev 0.1</div>
+      <h1>Foreman<br>Signal Box</h1>
+      <p class="lede">Every job Claude hands to Gemini runs this line. Pick a run and send it down the track, or click any station to see what it checks. Below the board: the tool-call gate you can type commands into, the red/green contract lab, and the learning loop.</p>
+    </div>
+    <div class="plate" aria-label="Panel legend">
+      <div><b>LAMPS</b></div>
+      <div><span style="color:var(--lamp-green)">●</span> proceed &nbsp; <span style="color:var(--lamp-red)">●</span> stop</div>
+      <div><span style="color:var(--lamp-amber)">●</span> caution &nbsp; <span style="color:var(--lamp-cyan)">●</span> occupied</div>
+      <div style="margin-top:6px"><b>SIDINGS</b> end a job;</div>
+      <div><code>wait</code> exit: 0 pass · 1 fail · 2 quota · 3 error</div>
+    </div>
+  </header>
+
+  <div class="statusline" id="statusline" aria-live="polite" aria-label="Claude Code status line"></div>
+
+  <section class="board" aria-label="Job track diagram">
+    <div class="board-main">
+      <div class="board-bar">
+        <label for="scenario">Run</label>
+        <select id="scenario"></select>
+        <button class="btn primary" id="go" type="button">Dispatch</button>
+        <button class="btn" id="step" type="button">Step</button>
+        <button class="btn" id="reset" type="button">Reset</button>
+        <span class="row" style="margin-left:auto"><label for="speed">Speed</label><select id="speed"><option value="1.6">Slow</option><option value="1" selected>Normal</option><option value="0.5">Fast</option></select></span>
+      </div>
+      <div class="diagram"><svg id="svg" viewBox="0 0 1320 470" role="img" aria-labelledby="svgtitle"><title id="svgtitle">Job track: start, token gate, approval, worktree, red check, brief, run, verify, report, review, finalize, merged, with sidings for every way a job can stop</title></svg></div>
+      <div class="log" id="log" aria-live="polite"></div>
+    </div>
+    <aside class="detail" id="detail" aria-live="polite"></aside>
+  </section>
+
+  <div class="instruments">
+    <section class="panel" aria-labelledby="gate-h">
+      <div class="panel-head">
+        <div class="eyebrow">instrument 1 · src/pipeline/gate.ts</div>
+        <h2 id="gate-h">Gate interlocking</h2>
+        <p class="lede">The hook decides every tool call Gemini makes, in milliseconds, with no human in the loop. This is the same rule ladder, running in your browser. Try the presets: the first row is commands it lets through, the second is bypasses it now stops.</p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field"><label for="g-tool">Tool</label>
+            <select id="g-tool">
+              <option value="run_command">run_command</option>
+              <option value="write_to_file">write_to_file</option>
+              <option value="view_file">view_file</option>
+              <option value="call_mcp_tool">call_mcp_tool</option>
+              <option value="search_web">search_web</option>
+              <option value="invoke_subagent">invoke_subagent</option>
+            </select></div>
+          <div class="field"><label for="g-mode">Job kind</label>
+            <select id="g-mode"><option value="implement">implement</option><option value="explore">explore (read-only)</option></select></div>
+          <div class="field"><label for="g-unknown">unknown_commands</label>
+            <select id="g-unknown"><option>deny</option><option>allow</option><option>ask_user</option></select></div>
+          <div class="field"><label for="g-allow">allowed_commands</label>
+            <input type="text" id="g-allow" value="npm test, npx vitest run, npx tsc, npm run lint"></div>
+        </div>
+        <div class="cmdline"><span id="g-prompt">$</span><input type="text" id="g-input" spellcheck="false" autocomplete="off" aria-label="Tool argument" value="npm test 2>&1"></div>
+        <div class="presets" id="g-presets-ok" aria-label="Allowed examples"></div>
+        <div class="presets" id="g-presets-bad" aria-label="Bypass examples"></div>
+        <div class="two">
+          <div class="verdict"><div class="big-lamp" id="g-lamp"></div><div style="min-width:0; display:grid; gap:4px"><strong id="g-decision">—</strong><p id="g-reason"></p></div></div>
+          <ol class="ladder" id="g-ladder" aria-label="Rule ladder"></ol>
+        </div>
+        <p class="mono" style="color:var(--ink-soft)">Worktree: <code>/var/agy/wt/3f9a1c/t-7f3a</code> · policy lives in <code>t-7f3a.gate/</code>, outside it · contract test: <code>test/auth/jwt.test.ts</code></p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="lab-h">
+      <div class="panel-head">
+        <div class="eyebrow">instrument 2 · src/pipeline/contract.ts · verify.ts</div>
+        <h2 id="lab-h">Red / green contract lab</h2>
+        <p class="lede">Claude writes the contract tests; the server commits them on the base and reads their own cases from the JUnit report. Flip cases on the base and after Gemini's run, and compare today's checks with the old exit-code-only ones.</p>
+      </div>
+      <div class="panel-body">
+        <div class="two">
+          <div class="cases"><h3>On the base commit</h3><div id="lab-base" class="cases"></div></div>
+          <div class="cases"><h3>After Gemini's run</h3><div id="lab-after" class="cases"></div></div>
+        </div>
+        <div class="two">
+          <div class="cases"><div class="eyebrow">red check (before Gemini starts)</div><div class="versus" id="lab-red"></div></div>
+          <div class="cases"><div class="eyebrow">verify (after the run)</div><div class="versus" id="lab-green"></div></div>
+        </div>
+        <div class="row"><span class="eyebrow">Scenarios</span><span id="lab-presets" class="row"></span></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="learn-h">
+      <div class="panel-head">
+        <div class="eyebrow">instrument 3 · src/jobs/incidents.ts · lessons.ts</div>
+        <h2 id="learn-h">Learning loop</h2>
+        <p class="lede">A job that isn't a clean first-try pass becomes an incident with a category. Claude writes a one-line lesson; matching lessons go into the next brief. Record the same lesson three times and it's offered to you as a permanent rule for the skill.</p>
+      </div>
+      <div class="panel-body">
+        <div class="loop" id="incidents"></div>
+        <div class="two">
+          <div class="cases">
+            <div class="eyebrow">lesson for this incident</div>
+            <div class="case" style="grid-template-columns:1fr"><div class="nm" id="lesson-text"></div></div>
+            <div class="row"><button class="btn primary" id="lesson-add" type="button">Record lesson</button><div class="meter" id="meter" aria-label="Lesson hits"><i></i><i></i><i></i></div><span class="mono" id="hits"></span></div>
+          </div>
+          <div id="promote-slot"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span>agy-foreman v0.1</span><span>4 MCP tools: agy_status · agy_start · agy_get · agy_act</span><span>Gemini 3.8 Flash via <code>agy -p</code></span><span>Diagram and rules mirror the source at 63622fd</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s) => document.querySelector(s);
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (parent) parent.appendChild(n); return n; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/* ───────────── stations ───────────── */
+const Y = 170, SY = 305, BUS = 415;
+const S = {
+  start:    { x: 55,   y: Y, name: "agy_start", sub: "task or plan step", lamp: true,
+    what: "Claude asks to delegate: an implement or explore job, a task or a plan step (Superpowers ### Task N, or an OpenSpec tasks.md section), with optional contract tests and a token estimate.",
+    checks: ["Delegation not paused", "No active quota cooldown (else the quota card)"], file: "src/jobs/start.ts" },
+  token:    { x: 165,  y: Y, name: "Token gate", sub: "overhead × 1.5 < direct", lamp: true,
+    what: "Refuses without asking when delegating costs more than doing it: delegate_overhead_tokens × refuse_ratio must stay under direct_tokens. Contract tests without test_report are refused here too, before any card.",
+    checks: ["estimate given", "overhead × 1.5 ≤ direct", "test_report set when contract tests exist"], file: "src/jobs/tokengate.ts" },
+  approve:  { x: 275,  y: Y, name: "Approval", sub: "one card per plan", lamp: true,
+    what: "MCP elicitation card. Plan runs ask once; the grant is keyed to the plan file's hash and lasts 24 h or until the file changes. Ad-hoc tasks get a per-task card.",
+    checks: ["Plan grant still valid", "or: you click Approve"], file: "src/jobs/policy.ts" },
+  worktree: { x: 385,  y: Y, name: "Worktree", sub: "git worktree + setup", lamp: true,
+    what: "A fresh worktree outside the repo on branch agy/<job>, then setup_command (npm ci, …) so dependencies exist before any test run.",
+    checks: ["setup_command exits 0 within 15 min"], file: "src/pipeline/worktree.ts" },
+  red:      { x: 495,  y: Y, name: "Red check", sub: "contract cases fail", lamp: true,
+    what: "Contract tests are committed as the job's base. The suite runs once; the contract tests' own cases are read from the JUnit report and at least one must fail. That run is also the baseline test count.",
+    checks: ["report written", "contract cases collected", "≥ 1 contract case fails"], file: "src/pipeline/contract.ts" },
+  brief:    { x: 605,  y: Y, name: "Brief + gate", sub: ".agy-task/brief.md", lamp: true,
+    what: "Writes the brief (task, scope, constraints, verification command, skills, matching lessons, checklist), installs skills into .agents/skills, and installs the tool-call hook. The gate's policy and log go to <worktree>.gate, outside the worktree.",
+    checks: ["Skills resolve inside their roots", "Hook + policy installed"], file: "src/pipeline/gated-run.ts" },
+  run:      { x: 725,  y: Y, name: "agy -p", sub: "Gemini 3.8 Flash", lamp: true,
+    what: "One headless, CI-style run: stream-json events, closed stdin, explicit print timeout. Every tool call goes through the hook; the stream guard re-checks each finished call and stops the run if the gate's files change.",
+    checks: ["No 429 (else quota card)", "No guard event", "Within timeout"], file: "src/agy/run.ts" },
+  verify:   { x: 845,  y: Y, name: "Verify", sub: "server runs tests", lamp: true,
+    what: "Protected files (tests, package.json, runner config, .agy-foreman.json) are restored from the base. The old report is deleted, the suite runs, and every contract case must be in the new report and pass. Counts, skips and git refs are checked for tampering.",
+    checks: ["exit 0", "report written", "contract cases all pass", "no fewer tests, no new skips", "refs, hooks, config untouched"], file: "src/pipeline/verify.ts" },
+  report:   { x: 955,  y: Y, name: "Report", sub: "commit + merge check", lamp: true,
+    what: "Commits the worktree, computes diff --stat and a merge-tree check, fences Gemini's own report as untrusted data, and builds the envelope agy_get returns.",
+    checks: ["Some file changed", "Merges cleanly"], file: "src/pipeline/implement.ts" },
+  review:   { x: 1065, y: Y, name: "Review", sub: "Claude reads envelope", lamp: true,
+    what: "agy-foreman wait wakes Claude. It reads the envelope (contract, verify, guard events, diff), not Gemini's prose, then finalizes or sends a follow-up.",
+    checks: ["contract.greenAfter", "verify.passed", "protectedRestored empty"], file: "skills/gemini-delegation/references/review.md" },
+  finalize: { x: 1175, y: Y, name: "Finalize", sub: "squash · merge · keep", lamp: true,
+    what: "agy_act finalize: squash (with Implemented-by and Verified trailers), merge, keep the branch, or discard.",
+    checks: ["No conflict with your branch"], file: "src/jobs/actions.ts" },
+  merged:   { x: 1270, y: Y, name: "Merged", sub: "your branch", lamp: false, terminal: true, tone: "green",
+    what: "The work is on your branch. The status line marks the task ● and the plan moves to the next step.", checks: [], file: "src/jobs/actions.ts" },
+
+  refused:  { x: 165,  y: SY, siding: "refused", note: "cheaper to do directly", tone: "amber", exit: 1, inc: "wrong_or_missing_gate",
+    what: "Refused without a card. Claude does the task itself.", checks: [], file: "src/jobs/tokengate.ts" },
+  denied:   { x: 275,  y: SY, siding: "denied", note: "you clicked Deny", tone: "red", exit: 1,
+    what: "You said no. Nothing ran.", checks: [], file: "src/jobs/start.ts" },
+  error:    { x: 385,  y: SY, siding: "error", note: "setup_command failed", tone: "red", exit: 3, inc: "env_setup",
+    what: "The worktree couldn't be prepared, usually missing dependencies or network.", checks: [], file: "src/pipeline/implement.ts" },
+  redref:   { x: 495,  y: SY, siding: "refused", note: "contract not red", tone: "amber", exit: 1, inc: "contract_too_weak",
+    what: "The contract tests already pass on the base, weren't collected, or no report was written. Nothing to prove, so Gemini never starts.", checks: [], file: "src/pipeline/contract.ts" },
+  guard:    { x: 725,  y: SY, siding: "guard_violation", note: "forbidden call ran", tone: "red", exit: 1, inc: "protected_file_attempt",
+    what: "The stream guard saw a finished tool call the policy forbids, or the gate's files changed. The run is killed on the spot.", checks: [], file: "src/pipeline/guard.ts" },
+  failed:   { x: 845,  y: SY, siding: "failed", note: "verify said no", tone: "red", exit: 1, inc: "brief_missing_context",
+    what: "Tests failed, the report was missing, a contract case didn't pass, or tampering was found. Claude can send a follow-up into the same conversation, or take the task back after two strikes.", checks: [], file: "src/pipeline/verify.ts" },
+  discard:  { x: 1175, y: SY, siding: "discarded", note: "branch deleted", tone: "amber", exit: null,
+    what: "Claude threw the branch away and records a lesson.", checks: [], file: "src/jobs/actions.ts" },
+
+  quota:    { x: 725,  y: 52,  name: "Quota card", sub: "429 seen, agy killed", lamp: true, card: true,
+    what: "The 429 is spotted in agy's log or stream and the run is killed at once; partial work is kept. You choose: retry now, continue without Gemini, or wait for the reset. Never automatic.",
+    checks: ["Your choice"], file: "src/jobs/policy.ts" },
+  qwait:    { x: 585,  y: 52, siding: "quota", note: "wait for reset", tone: "amber", exit: 2, inc: "quota", up: true,
+    what: "New starts are refused with the reset time until the cooldown ends.", checks: [], file: "src/jobs/flags.ts" },
+  qcont:    { x: 865,  y: 52, siding: "paused", note: "continue without Gemini", tone: "amber", exit: 2, up: true,
+    what: "Claude takes over from the partial work; delegation stays paused until agy_act resume_delegation.", checks: [], file: "src/jobs/policy.ts" },
+
+  lessons:  { x: 1060, y: BUS, name: "Lessons", sub: "≤ 5 into next brief", lamp: false, bus: true,
+    what: "Incidents feed a one-line lesson from Claude: implementer lessons go into matching briefs, orchestrator lessons show in agy_status.", checks: [], file: "src/jobs/lessons.ts" },
+  skill:    { x: 1240, y: BUS, name: "Skill rule", sub: "after 3 hits", lamp: false, bus: true,
+    what: "A lesson recorded three times is offered to you as a permanent rule in the gemini-delegation skill. Never edited without your approval.", checks: [], file: "src/jobs/actions.ts" },
+};
+
+/* edges: id pair -> polyline points */
+const E = {};
+const edge = (a, b, pts, cls = "trk") => { E[a + ">" + b] = { pts, cls }; };
+const main = ["start", "token", "approve", "worktree", "red", "brief", "run", "verify", "report", "review", "finalize", "merged"];
+for (let i = 0; i < main.length - 1; i++) edge(main[i], main[i + 1], [[S[main[i]].x, Y], [S[main[i + 1]].x, Y]]);
+const down = (a, b) => edge(a, b, [[S[a].x, Y], [S[b].x, SY]], "trk spur");
+down("token", "refused"); down("approve", "denied"); down("worktree", "error"); down("red", "redref"); down("run", "guard"); down("verify", "failed"); down("finalize", "discard");
+edge("run", "quota", [[725, Y], [725, 52]], "trk spur");
+edge("quota", "run", [[725, 52], [695, 82], [695, 140], [725, Y]], "trk loop");
+edge("quota", "qwait", [[725, 52], [585, 52]], "trk spur");
+edge("quota", "qcont", [[725, 52], [865, 52]], "trk spur");
+edge("failed", "run", [[845, SY], [800, 270], [760, 225], [736, 190], [725, Y]], "trk loop");
+for (const s of ["refused", "error", "redref", "guard", "failed"]) edge(s, "lessons", [[S[s].x, SY], [S[s].x, BUS], [1060, BUS]], "trk bus");
+edge("qwait", "lessons", [[585, 52], [585, 30], [1300, 30], [1300, BUS], [1060, BUS]], "trk bus");
+edge("lessons", "skill", [[1060, BUS], [1240, BUS]], "trk bus");
+
+/* ───────────── draw ───────────── */
+const svg = $("#svg");
+const gTrk = el("g", {}, svg), gLbl = el("g", {}, svg), gSt = el("g", {}, svg);
+el("text", { x: 20, y: 22, class: "zone" }, gLbl).textContent = "quota branch";
+el("text", { x: 20, y: Y - 34, class: "zone" }, gLbl).textContent = "main line";
+el("text", { x: 20, y: SY + 48, class: "zone" }, gLbl).textContent = "sidings";
+el("text", { x: 20, y: BUS - 10, class: "zone" }, gLbl).textContent = "incident bus";
+const drawn = {};
+const pathD = (pts) => pts.map((p, i) => (i ? "L" : "M") + p[0] + "," + p[1]).join(" ");
+// sleepers under the main line
+for (let x = 40; x <= 1290; x += 18) el("line", { x1: x, y1: Y - 7, x2: x, y2: Y + 7, class: "sleeper" }, gTrk);
+for (const [k, e] of Object.entries(E)) drawn[k] = el("path", { d: pathD(e.pts), class: e.cls }, gTrk);
+el("text", { x: 770, y: 262, class: "siding-sub" }, gLbl).textContent = "follow-up";
+el("text", { x: 650, y: 112, class: "siding-sub" }, gLbl).textContent = "retry";
+
+const lamps = {};
+for (const [id, s] of Object.entries(S)) {
+  const g = el("g", { class: "station", tabindex: "0", role: "button", "data-id": id, "aria-label": (s.name || s.siding) + ": " + (s.sub || s.note) }, gSt);
+  if (s.siding) {
+    const dy = s.up ? -1 : 1;
+    el("rect", { x: s.x - 16, y: s.y - (s.up ? 0 : 0) - 3, width: 32, height: 6, class: "buffer" }, g);
+    const ty = s.up ? s.y - 14 : s.y + 22;
+    el("text", { x: s.x, y: ty, "text-anchor": "middle", class: "siding-label" }, g).textContent = s.siding;
+    el("text", { x: s.x, y: ty + (s.up ? -12 : 13), "text-anchor": "middle", class: "siding-sub" }, g).textContent = s.note + (s.exit != null ? " · exit " + s.exit : "");
+    lamps[id] = el("circle", { cx: s.x + 24, cy: s.y, r: 6, class: "lamp" }, g);
+    void dy;
+  } else {
+    const w = s.bus ? 120 : 98, h = 46, top = s.bus ? s.y - 23 : s.card ? s.y - 23 : s.y - 70;
+    el("rect", { x: s.x - w / 2, y: top, width: w, height: h, rx: 2, class: "box" }, g);
+    el("text", { x: s.x, y: top + 20, "text-anchor": "middle", class: "name" }, g).textContent = s.name;
+    el("text", { x: s.x, y: top + 36, "text-anchor": "middle", class: "sub" }, g).textContent = s.sub;
+    if (!s.bus && !s.card) el("line", { x1: s.x, y1: top + h, x2: s.x, y2: Y - 8, stroke: "var(--ink)", "stroke-width": 2 }, g);
+    if (s.lamp) lamps[id] = el("circle", { cx: s.x + w / 2 - 9, cy: top + 9, r: 5.5, class: "lamp" }, g);
+    if (s.terminal) el("rect", { x: s.x + 30, y: Y - 9, width: 7, height: 18, class: "buffer" }, g);
+  }
+  g.addEventListener("click", () => select(id));
+  g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(id); } });
+}
+const train = el("g", { class: "train", transform: "translate(55,170)" }, svg);
+el("rect", { x: -20, y: -9, width: 40, height: 18, rx: 3 }, train);
+const trainLbl = el("text", { x: 0, y: 3.5, "text-anchor": "middle" }, train);
+trainLbl.textContent = "t-7f3a";
+
+/* ───────────── detail panel ───────────── */
+const detail = $("#detail");
+let selected = null;
+function select(id) {
+  selected = id;
+  document.querySelectorAll(".station").forEach((n) => n.classList.toggle("sel", n.dataset.id === id));
+  const s = S[id];
+  const title = s.name || s.siding;
+  const exit = s.exit != null ? `<span class="chip ${s.tone || "amber"}">wait exit ${s.exit}</span>` : "";
+  const inc = s.inc ? `<span class="chip amber">incident: ${s.inc}</span>` : "";
+  detail.innerHTML = `
+    <div class="eyebrow">${s.siding ? "siding · job ends here" : s.bus ? "learning" : "station"}</div>
+    <h3>${esc(title)}</h3>
+    <p>${esc(s.what)}</p>
+    ${exit || inc ? `<div>${exit}${inc}</div>` : ""}
+    <dl>
+      ${s.checks.length ? `<div><dt>Signal clears when</dt><dd>${s.checks.map((c) => `<span class="chip green">${esc(c)}</span>`).join("")}</dd></div>` : ""}
+      <div><dt>Source</dt><dd><code>${esc(s.file)}</code></dd></div>
+    </dl>`;
+}
+select("verify");
+
+/* ───────────── scenarios ───────────── */
+const SC = {
+  clean: { label: "Clean plan step: red → green → squash", marks: 7, task: "#7 refresh-token rotation",
+    steps: [
+      ["start", "agy_start kind=implement plan=docs/plans/auth.md step=7", "run"],
+      ["token", "token gate: direct 30000 vs delegated 4000 × 1.5 = 6000 → proceed", "ok"],
+      ["approve", "plan grant valid (approved at step 1, plan hash unchanged) → no card", "ok"],
+      ["worktree", "git worktree add -b agy/t-7f3a … ; npm ci → exit 0", "ok"],
+      ["red", "contract test/auth/refresh.test.ts: 3 cases collected, 3 failing on base → RED", "ok"],
+      ["brief", "brief.md written · 2 lessons injected · hook + policy installed", "ok"],
+      ["run", "agy -p … 42 tool calls · 0 denied · status SUCCESS", "run"],
+      ["verify", "restore protected: none · npm test → exit 0 · 51/51 · contract 3/3 green", "ok"],
+      ["report", "commit 9c41e0a · src/auth/refresh.ts | 64 ++++- · merge-tree clean", "ok"],
+      ["review", "wait t-7f3a → exit 0 · Claude reads envelope", "ok"],
+      ["finalize", "agy_act finalize mode=squash · Verified: 51/51 tests", "ok"],
+      ["merged", "plan step 7 done ●", "ok"]] },
+  small: { label: "Too small to delegate", marks: 7, task: "#3 rename a flag",
+    steps: [
+      ["start", "agy_start kind=implement task=\"rename --dry to --dry-run\"", "run"],
+      ["token", "token gate: direct 3000 vs delegated 4000 × 1.5 = 6000", "warn"],
+      ["refused", "refused: cheaper to do directly → Claude does it", "warn"]] },
+  weak: { label: "Contract already passes on base", marks: 7, task: "#4 add date parser",
+    steps: [
+      ["start", "agy_start kind=implement plan=docs/plans/dates.md step=4", "run"],
+      ["token", "token gate → proceed", "ok"], ["approve", "plan grant valid → no card", "ok"],
+      ["worktree", "worktree + npm ci → exit 0", "ok"],
+      ["red", "contract test/dates.test.ts: 2 cases, 0 failing on base", "warn"],
+      ["redref", "refused: contract tests already pass on base (2 cases)", "warn"],
+      ["lessons", "incident contract_too_weak → lesson: \"assert the new format, not the old one\"", "warn"]] },
+  quota: { label: "Quota hit mid-run", marks: 7, task: "#5 add pagination",
+    steps: [
+      ["start", "agy_start kind=implement plan=docs/plans/api.md step=5", "run"],
+      ["token", "token gate → proceed", "ok"], ["approve", "plan grant valid → no card", "ok"],
+      ["worktree", "worktree + npm ci → exit 0", "ok"], ["red", "contract: 4 cases failing on base → RED", "ok"],
+      ["brief", "brief + gate installed", "ok"],
+      ["run", "agy -p … 17 tool calls", "run"],
+      ["quota", "429 in agy log → agy killed, partial work kept · resets in 2h13m", "bad"],
+      ["qwait", "you chose: Wait for reset · cooldown until 16:40", "warn"],
+      ["lessons", "incident quota", "warn"]] },
+  guard: { label: "Gemini tries to rewrite the gate", marks: 7, task: "#6 harden login",
+    steps: [
+      ["start", "agy_start kind=implement plan=docs/plans/auth.md step=6", "run"],
+      ["token", "token gate → proceed", "ok"], ["approve", "plan grant valid", "ok"],
+      ["worktree", "worktree + npm ci → exit 0", "ok"], ["red", "contract: 2 cases failing on base → RED", "ok"],
+      ["brief", "brief + gate installed · fingerprint 4be1…", "ok"],
+      ["run", "run_command echo {…} > .agents/hooks.json → denied: Shell construct not allowed: {", "bad"],
+      ["run", "write_to_file test/auth/login.test.ts → denied: protected pattern test/**", "bad"],
+      ["guard", "guard: write_to_file test/auth/login.test.ts: Target file matches protected pattern → run killed", "bad"],
+      ["lessons", "incident protected_file_attempt", "warn"]] },
+  followup: { label: "Fails, follow-up fixes it", marks: 7, task: "#2 CSV export",
+    steps: [
+      ["start", "agy_start kind=implement plan=docs/plans/export.md step=2", "run"],
+      ["token", "token gate → proceed", "ok"], ["approve", "plan card shown → you approved", "ok"],
+      ["worktree", "worktree + npm ci → exit 0", "ok"], ["red", "contract: 5 cases failing on base → RED", "ok"],
+      ["brief", "brief + gate installed", "ok"], ["run", "agy -p … 38 tool calls", "run"],
+      ["verify", "npm test → exit 1 · contract 4/5 · failing: \"escapes quotes in fields\"", "bad"],
+      ["failed", "state failed · wait exit 1", "bad"],
+      ["run", "agy_act followup: \"quote fields containing commas or quotes (RFC 4180)\" · same conversation", "run"],
+      ["verify", "npm test → exit 0 · 63/63 · contract 5/5 green", "ok"],
+      ["report", "commit 1d7a2f3 · merge-tree clean", "ok"], ["review", "Claude reviews the diff", "ok"],
+      ["finalize", "finalize mode=squash", "ok"], ["merged", "step 2 done ●", "ok"]] },
+};
+const scSel = $("#scenario");
+for (const [k, v] of Object.entries(SC)) { const o = document.createElement("option"); o.value = k; o.textContent = v.label; scSel.appendChild(o); }
+
+/* status line */
+const statusEl = $("#statusline");
+let plan = null;
+function renderStatus(cur, state, calls, secs) {
+  const sc = SC[scSel.value];
+  const n = sc.marks, idx = Number(sc.task.match(/#(\d+)/)[1]);
+  const marks = [];
+  for (let i = 1; i <= n; i++) {
+    if (i < idx) marks.push('<span class="m-pass">●</span>');
+    else if (i === idx) marks.push(state === "run" ? '<span class="m-run">' + "◐◓◑◒"[Math.floor(Date.now() / 300) % 4] + "</span>" : state === "pass" ? '<span class="m-pass">●</span>' : state === "fail" ? '<span class="m-fail">✕</span>' : '<span class="m-off">○</span>');
+    else marks.push('<span class="m-off">○</span>');
+  }
+  const done = Math.min(n, idx - 1 + (state === "pass" ? 1 : 0));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0"), ss = String(secs % 60).padStart(2, "0");
+  statusEl.innerHTML = `agy ${marks.join("")} ${done}/${n} tasks · ${esc(sc.task)} · › ${esc(cur)} · ${calls} tool calls · plan ${mm}m${ss}s`;
+}
+
+/* ───────────── engine ───────────── */
+const logEl = $("#log");
+let run = null; // {sc, i, pos:{x,y}, calls, secs}
+const speedEl = $("#speed");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function log(text, cls) {
+  const d = document.createElement("div");
+  const t = new Date();
+  d.innerHTML = `<span class="t">${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}</span> <span class="${cls || ""}">${esc(text)}</span>`;
+  logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLamps() { for (const l of Object.values(lamps)) l.setAttribute("class", "lamp"); for (const p of Object.values(drawn)) p.classList.remove("lit"); }
+function moveTrain(x, y) { train.setAttribute("transform", `translate(${x},${y})`); }
+function reset() {
+  run = null; clearLamps(); logEl.innerHTML = ""; moveTrain(S.start.x, Y);
+  renderStatus("idle", "idle", 0, 0);
+  log("board reset · choose a run and press Dispatch", "");
+}
+function pathBetween(a, b) {
+  const e = E[a + ">" + b];
+  if (e) return { pts: e.pts, key: a + ">" + b };
+  return { pts: [[S[a].x, S[a].y], [S[b].x, S[b].y]], key: null };
+}
+function animate(pts, ms) {
+  return new Promise((resolve) => {
+    if (reduce || ms <= 0) { const p = pts[pts.length - 1]; moveTrain(p[0], p[1]); return resolve(); }
+    const segs = []; let total = 0;
+    for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(L); total += L; }
+    const t0 = performance.now();
+    const tick = (now) => {
+      let k = Math.min(1, (now - t0) / ms); k = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      let d = k * total, i = 0;
+      while (i < segs.length - 1 && d > segs[i]) { d -= segs[i]; i++; }
+      const f = segs[i] ? d / segs[i] : 1;
+      moveTrain(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+      if (k < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+const toneLamp = { ok: "green", bad: "red", warn: "amber", run: "cyan" };
+let busy = false;
+async function stepOnce() {
+  if (busy) return false;
+  if (!run) { run = { sc: SC[scSel.value], i: -1, at: "start", calls: 0, secs: 0 }; clearLamps(); logEl.innerHTML = ""; }
+  const sc = run.sc;
+  if (run.i >= sc.steps.length - 1) return false;
+  busy = true;
+  run.i++;
+  const [id, text, tone] = sc.steps[run.i];
+  if (run.i > 0 || id !== "start") {
+    const { pts, key } = pathBetween(run.at, id);
+    if (key) drawn[key].classList.add("lit");
+    await animate(pts, 520 * Number(speedEl.value));
+  } else moveTrain(S.start.x, Y);
+  run.at = id;
+  if (lamps[id]) lamps[id].setAttribute("class", "lamp " + (toneLamp[tone] || "green"));
+  const m = text.match(/(\d+) tool calls/); if (m) run.calls = Number(m[1]);
+  run.secs += id === "run" ? 412 : 23;
+  log(text, tone);
+  const st = S[id];
+  const last = run.i === sc.steps.length - 1;
+  const state = last ? (id === "merged" ? "pass" : "fail") : "run";
+  renderStatus(st.name || st.siding, state, run.calls, run.secs);
+  select(id);
+  busy = false;
+  return !last;
+}
+let auto = false;
+async function dispatch() {
+  if (auto) return; auto = true; run = null;
+  while (await stepOnce()) await new Promise((r) => setTimeout(r, 380 * Number(speedEl.value)));
+  auto = false;
+}
+$("#go").addEventListener("click", dispatch);
+$("#step").addEventListener("click", () => { if (!auto) stepOnce(); });
+$("#reset").addEventListener("click", () => { if (!auto && !busy) reset(); });
+scSel.addEventListener("change", () => { if (!auto && !busy) reset(); });
+setInterval(() => { if (run && !busy && run.i < run.sc.steps.length - 1 && run.i >= 0) { const s = run.sc.steps[run.i]; renderStatus(S[s[0]].name || S[s[0]].siding, "run", run.calls, run.secs); } }, 300);
+reset();
+
+/* ───────────── gate interlocking (port of src/pipeline/gate.ts) ───────────── */
+const WT = "/var/agy/wt/3f9a1c/t-7f3a";
+const PROTECTED = ["tests/**", "test/**", "**/test_*.py", "**/*_test.*", "**/*.spec.*", "**/*.test.*", "**/conftest.py", "**/package.json", "**/vitest.config.*", "**/vitest.workspace.*", "**/vite.config.*", "**/jest.config.*", "**/playwright.config.*", "**/karma.conf.*", "**/.mocharc.*", "**/tsconfig*.json", "**/pyproject.toml", "**/pytest.ini", "**/setup.cfg", "**/tox.ini", "Makefile", ".agy-foreman.json", "test/auth/jwt.test.ts"];
+function globToRegExp(glob) {
+  const g = glob.replace(/\\/g, "/"); let re = "", i = 0;
+  while (i < g.length) {
+    if (g.slice(i, i + 3) === "/**") { re += "(?:/.*)?"; i += 3; }
+    else if (g.slice(i, i + 3) === "**/") { re += "(?:.+/|^)"; i += 3; }
+    else if (g.slice(i, i + 2) === "**") { re += ".*"; i += 2; }
+    else if (g[i] === "*") { re += "[^/]*"; i++; }
+    else if (g[i] === "?") { re += "[^/]"; i++; }
+    else if (/[.+^$()[\]{}|\\]/.test(g[i])) { re += "\\" + g[i]; i++; }
+    else { re += g[i]; i++; }
+  }
+  return new RegExp("^" + re + "$");
+}
+const normPosix = (p) => { const out = []; for (const part of p.split("/")) { if (!part || part === ".") continue; if (part === "..") out.pop(); else out.push(part); } return "/" + out.join("/"); };
+const resolveT = (p) => { const q = String(p).replace(/\\/g, "/"); if (/^[A-Za-z]:\//.test(q)) return q; return q.startsWith("/") ? normPosix(q) : normPosix(WT + "/" + q); };
+const inside = (t) => t === WT || t.startsWith(WT + "/");
+const HARMLESS = /(^|\s)(?:\d?>&\d|(?:\d|&)?>>?\s*(?:\/dev\/null|\$null|NUL))(?=\s|$)/gi;
+function pathOutside(cmd) {
+  const toks = cmd.replace(HARMLESS, "$1").split(/[\s,=]+/).map((t) => t.replace(/^\d*[<>]+&?/, "").replace(/^["'(]+|["')]+$/g, ""));
+  for (const tok of toks) {
+    if (!tok) continue;
+    if (/^(~|\$[A-Za-z_{]|%[A-Za-z_]+%)/.test(tok)) return tok;
+    if (/^[A-Za-z]:[\\/]/.test(tok)) return tok;
+    if (/^(\/|\\\\|\.\.([\\/]|$))/.test(tok) && !inside(resolveT(tok))) return tok;
+  }
+  return null;
+}
+function split(cmd) {
+  const out = []; let cur = "", q = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (q) { if (c === q) q = null; cur += c; continue; }
+    if (c === '"' || c === "'") { q = c; cur += c; continue; }
+    const two = cmd.slice(i, i + 2);
+    if (two === "&&" || two === "||") { out.push(cur); cur = ""; i++; continue; }
+    if (";|&\n\r".includes(c)) { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur); return out.map((x) => x.trim()).filter(Boolean);
+}
+function shellConstruct(cmd) {
+  const line = cmd.replace(HARMLESS, "$1"); let q = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i], n = line[i + 1] || "";
+    if (q === "'") { if (c === "'") q = null; continue; }
+    if (c === "`") return "`";
+    if (c === "$" && (n === "(" || n === "{")) return c + n;
+    if (q === '"') { if (c === '"') q = null; continue; }
+    if (c === '"' || c === "'") { q = c; continue; }
+    if (c === "\\" && (n === '"' || n === "'")) return c + n;
+    if (c === "\n" || c === "\r") return "a line break";
+    if (c === "&") { if (n === "&") { i++; continue; } return c; }
+    if (/[<>(){}]/.test(c)) return c;
+  }
+  return null;
+}
+const DANGER = /\bgit\s+(push|commit|reset|checkout|switch|rebase|merge|remote|config|clean|stash|worktree|branch|tag)\b|\b(curl|wget|irm|iwr|Invoke-WebRequest|Invoke-RestMethod|iex|Invoke-Expression)\b|\brm\s+-rf\b|\bRemove-Item\b.*?\b-Recurse\b|\brmdir\s+\/s\b|\bdel\s+\/s\b|\bshutdown\b|(^|[;&|]\s*)format\s+[A-Za-z]:/i;
+const READ_GIT = /^git\s+(status|diff|log|show|ls-files|rev-parse|grep|blame)(?=\s|$)/i;
+const LISTING = /^(ls|dir|cat|type|echo|pwd|Get-ChildItem|Get-Content|Test-Path|Select-String)(?=\s|$)/i;
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function trace(pol, tool, arg) {
+  const L = []; const deny = (reason) => ({ decision: "deny", reason, L }); const ok = (reason) => ({ decision: "auto_approve", reason, L });
+  const rung = (name, st, note) => L.push({ name, st, note });
+  if (tool === "run_command") {
+    const cmd = arg.trim();
+    if (DANGER.test(cmd)) { rung("Danger list (git push, curl, rm -rf…)", "fail", (cmd.match(DANGER) || [""])[0]); return deny("Dangerous command not allowed."); }
+    rung("Danger list (git push, curl, rm -rf…)", "pass");
+    rung("Cwd inside the worktree", "pass", "Cwd not set");
+    const out = pathOutside(cmd);
+    if (out) { rung("Every path stays in the worktree", "fail", "found " + out); return deny(`Commands may only reference paths inside the worktree (found ${out}).`); }
+    rung("Every path stays in the worktree", "pass");
+    if (pol.mode === "explore" || pol.unknown !== "allow") {
+      const c = shellConstruct(cmd);
+      if (c) { rung("Plain command (no > $( ) ` & …)", "fail", "found " + c); return deny(`Shell construct not allowed: ${c}. Run one plain command per call (2>&1 is fine), and write files with the file tools.`); }
+      rung("Plain command (no > $( ) ` & …)", "pass");
+    } else rung("Plain command (no > $( ) ` & …)", "skip", "skipped: unknown_commands is allow");
+    const segs = split(cmd.replace(HARMLESS, "$1"));
+    for (const seg of segs) {
+      if (pol.mode === "explore") {
+        if (!(READ_GIT.test(seg) || LISTING.test(seg))) { rung("Read-only command (explore)", "fail", seg); return deny("Command not allowed in explore mode."); }
+      } else {
+        const allowed = pol.allow.some((c) => new RegExp("^" + escRe(c.trim()) + "(?=\\s|$)", "i").test(seg));
+        if (!(allowed || READ_GIT.test(seg) || LISTING.test(seg))) {
+          if (pol.unknown === "allow") continue;
+          rung("Each command on the allowlist", "fail", seg); return deny("Command not on allowlist: " + seg);
+        }
+      }
+    }
+    rung(pol.mode === "explore" ? "Read-only command (explore)" : "Each command on the allowlist", "pass", segs.join("  ·  "));
+    return ok("Every check passed.");
+  }
+  if (tool === "write_to_file") {
+    if (pol.mode === "explore") { rung("Writes allowed (implement only)", "fail"); return deny("Writes are not allowed in explore mode."); }
+    rung("Writes allowed (implement only)", "pass");
+    if (!arg.trim()) { rung("TargetFile given", "fail"); return deny("TargetFile is required."); }
+    const r = resolveT(arg.trim());
+    if (!inside(r)) { rung("Target inside the worktree", "fail", r); return deny("Writes outside the worktree are not allowed."); }
+    rung("Target inside the worktree", "pass");
+    const rel = r.slice(WT.length + 1);
+    if (rel.toLowerCase() !== ".agy-task/progress.md" && /^(\.git|\.agents|\.agy-task)(\/|$)/i.test(rel)) { rung("Not .git, .agents or .agy-task", "fail", rel); return deny(`Writing to internal directory (${rel}) is not allowed.`); }
+    rung("Not .git, .agents or .agy-task", "pass");
+    const hit = PROTECTED.find((g) => globToRegExp(g).test(rel));
+    if (hit) { rung("Not a protected path", "fail", hit); return deny("Target file matches protected pattern: " + hit); }
+    rung("Not a protected path", "pass", rel);
+    return ok("Write approved.");
+  }
+  if (tool === "view_file") {
+    if (!arg.trim()) { rung("Path inside the worktree", "pass", "no path"); return ok("Read approved."); }
+    const r = resolveT(arg.trim());
+    if (!inside(r)) { rung("Path inside the worktree", "fail", r); return deny("Reading outside the worktree is not allowed."); }
+    rung("Path inside the worktree", "pass"); return ok("Read approved.");
+  }
+  if (tool === "call_mcp_tool") {
+    rung("server/tool in allowed_mcp (empty)", "fail", arg || "socraticode/codebase_status");
+    return deny(`MCP tool ${arg || "socraticode/codebase_status"} not allowed`);
+  }
+  if (tool === "search_web") { rung("web: true in config", "fail", "web: false"); return deny("Web access is disabled."); }
+  rung("Known tool", "fail", tool); return deny(`Tool ${tool} is not allowed.`);
+}
+const PRESETS = {
+  run_command: {
+    ok: ["npm test 2>&1", "npx vitest run test/auth/jwt.test.ts", "git diff --stat && git status", "Select-String -Path src -Pattern \"=>\""],
+    bad: ["echo {} > .agents/foreman-policy.json", "echo $(node src/x.js)", "npx tsc-evil", "npm test\nnode src/x.js", "cat $USERPROFILE/.npmrc", "git push origin main", "cat ../../.ssh/id_rsa"] },
+  write_to_file: { ok: ["src/auth/refresh.ts", ".agy-task/progress.md"], bad: ["test/auth/jwt.test.ts", "package.json", "vitest.config.ts", ".agents/hooks.json", "../../escape.txt"] },
+  view_file: { ok: ["src/auth/jwt.ts", "README.md"], bad: ["/home/dev/.gemini/config/plugins/x/SKILL.md", "../../secrets.env"] },
+  call_mcp_tool: { ok: [], bad: ["socraticode/codebase_status"] },
+  search_web: { ok: [], bad: ["how to bypass vitest"] },
+  invoke_subagent: { ok: [], bad: ["helper"] },
+};
+const gTool = $("#g-tool"), gIn = $("#g-input"), gMode = $("#g-mode"), gUnk = $("#g-unknown"), gAllow = $("#g-allow");
+function renderPresets() {
+  const p = PRESETS[gTool.value];
+  for (const [slot, list, mark] of [["#g-presets-ok", p.ok, "✓ "], ["#g-presets-bad", p.bad, "✕ "]]) {
+    const box = $(slot); box.innerHTML = "";
+    for (const v of list) { const b = document.createElement("button"); b.type = "button"; b.textContent = mark + v.replace(/\n/g, "⏎"); b.addEventListener("click", () => { gIn.value = v; decideNow(); }); box.appendChild(b); }
+  }
+  $("#g-prompt").textContent = { run_command: "$", write_to_file: "write", view_file: "read", call_mcp_tool: "mcp", search_web: "web", invoke_subagent: "agent" }[gTool.value];
+}
+function decideNow() {
+  const pol = { mode: gMode.value, unknown: gUnk.value, allow: gAllow.value.split(",").map((s) => s.trim()).filter(Boolean) };
+  const r = trace(pol, gTool.value, gIn.value);
+  const lamp = $("#g-lamp");
+  lamp.className = "big-lamp " + (r.decision === "deny" ? "red" : "green");
+  $("#g-decision").textContent = r.decision === "deny" ? "Deny" : "Auto-approve";
+  $("#g-reason").textContent = r.reason;
+  $("#g-ladder").innerHTML = r.L.map((x) => `<li class="${x.st}"><span>${esc(x.name)}${x.note ? `<small>${esc(x.note)}</small>` : ""}</span><span class="st">${x.st}</span></li>`).join("");
+}
+gTool.addEventListener("change", () => { const p = PRESETS[gTool.value]; gIn.value = (p.ok[0] || p.bad[0] || ""); renderPresets(); decideNow(); });
+for (const n of [gIn, gMode, gUnk, gAllow]) n.addEventListener("input", decideNow);
+gIn.addEventListener("paste", (e) => { const t = e.clipboardData && e.clipboardData.getData("text"); if (t && t.includes("\n")) { e.preventDefault(); gIn.value = t; decideNow(); } });
+renderPresets(); decideNow();
+
+/* ───────────── contract lab ───────────── */
+const lab = {
+  base: { "issues a token": "fail", "rejects an expired token": "fail", "legacy date parser (unrelated)": "pass" },
+  after: { "issues a token": "pass", "rejects an expired token": "pass", "legacy date parser (unrelated)": "pass", report: "written" },
+};
+const CONTRACT = ["issues a token", "rejects an expired token"];
+function seg(group, key, opts) {
+  const wrap = document.createElement("div"); wrap.className = "case";
+  const nm = document.createElement("div"); nm.className = "nm";
+  nm.innerHTML = key === "report" ? "reports/junit.xml<small>the run writes its report</small>" : esc(key) + (CONTRACT.includes(key) ? "<small>test/auth/jwt.test.ts · contract</small>" : "<small>test/legacy/dates.test.ts</small>");
+  const s = document.createElement("div"); s.className = "seg"; s.setAttribute("role", "group"); s.setAttribute("aria-label", key);
+  for (const [val, cls, label] of opts) {
+    const b = document.createElement("button"); b.type = "button"; b.className = cls; b.textContent = label;
+    b.setAttribute("aria-pressed", String(lab[group][key] === val));
+    b.addEventListener("click", () => { lab[group][key] = val; drawLab(); });
+    s.appendChild(b);
+  }
+  wrap.append(nm, s); return wrap;
+}
+const CASE_OPTS = [["pass", "pass", "pass"], ["fail", "fail", "fail"], ["skip", "skip", "skip"], ["missing", "miss", "not run"]];
+function verdictCard(old, title, ok, why, tone) {
+  return `<div class="vcard ${old ? "old" : ""}"><div class="tag">${old ? "before the fix · exit code only" : "now · per contract case"}</div><div class="res"><i class="${tone}"></i>${esc(title)}</div><p>${esc(why)}</p></div>`;
+}
+function drawLab() {
+  const b = $("#lab-base"), a = $("#lab-after"); b.innerHTML = ""; a.innerHTML = "";
+  for (const k of Object.keys(lab.base)) b.appendChild(seg("base", k, k.includes("unrelated") ? CASE_OPTS.slice(0, 2) : CASE_OPTS));
+  for (const k of Object.keys(lab.after)) a.appendChild(seg("after", k, k === "report" ? [["written", "pass", "written"], ["missing", "miss", "missing"]] : k.includes("unrelated") ? CASE_OPTS.slice(0, 2) : CASE_OPTS));
+  // red check
+  const base = lab.base; const baseExit = Object.values(base).includes("fail") ? 1 : 0;
+  const cBase = CONTRACT.map((k) => base[k]); const collected = cBase.filter((s) => s !== "missing").length; const failing = cBase.filter((s) => s === "fail").length;
+  const oldRed = baseExit !== 0;
+  let newRed = false, why;
+  if (collected === 0) why = "Refused: the report has no cases from the contract tests.";
+  else if (failing === 0) why = `Refused: contract tests already pass on base (${collected} cases).`;
+  else { newRed = true; why = `${failing} of ${collected} contract cases fail on the base. Gemini starts.`; }
+  $("#lab-red").innerHTML =
+    verdictCard(true, oldRed ? "Red · starts" : "Green · refused", oldRed, oldRed ? `Suite exit ${baseExit}. Any failing test counts, even an unrelated one.` : "Suite exit 0.", oldRed ? "green" : "amber") +
+    verdictCard(false, newRed ? "Red · starts" : "Not red · refused", newRed, why, newRed ? "green" : "amber");
+  // verify
+  const af = lab.after; const afExit = Object.entries(af).some(([k, v]) => k !== "report" && v === "fail") ? 1 : 0;
+  const reportOk = af.report === "written";
+  const cAfter = CONTRACT.map((k) => af[k]); const col2 = cAfter.filter((s) => s !== "missing").length;
+  const green = col2 > 0 && cAfter.every((s) => s === "pass");
+  const baseCount = Object.values(base).filter((s) => s !== "missing").length; const afterCount = Object.entries(af).filter(([k, v]) => k !== "report" && v !== "missing").length;
+  const fewer = reportOk && afterCount < baseCount; const newSkips = Math.max(0, Object.entries(af).filter(([k, v]) => k !== "report" && v === "skip").length - Object.values(base).filter((v) => v === "skip").length);
+  const oldPass = afExit === 0 && (!reportOk || (!fewer && newSkips === 0));
+  const reasons = [];
+  if (afExit !== 0) reasons.push("suite exit 1");
+  if (!reportOk) reasons.push("no report written");
+  if (!green) reasons.push(col2 === 0 ? "contract cases missing from report" : "a contract case did not pass");
+  if (fewer) reasons.push("fewer tests than base");
+  if (newSkips) reasons.push(newSkips + " new skip" + (newSkips > 1 ? "s" : ""));
+  const newPass = reasons.length === 0;
+  $("#lab-green").innerHTML =
+    verdictCard(true, oldPass ? "Passed" : "Failed", oldPass, oldPass ? (reportOk ? "Exit 0, counts unchanged." : "Exit 0 and no report: counts were skipped, so it passed.") : "Exit code or counts failed.", oldPass ? "green" : "red") +
+    verdictCard(false, newPass ? "Passed · green" : "Failed", newPass, newPass ? "Exit 0, report written, every contract case passed." : reasons.join(" · "), newPass ? "green" : "red");
+}
+const LAB_PRESETS = {
+  "Healthy TDD": () => { Object.assign(lab.base, { "issues a token": "fail", "rejects an expired token": "fail", "legacy date parser (unrelated)": "pass" }); Object.assign(lab.after, { "issues a token": "pass", "rejects an expired token": "pass", "legacy date parser (unrelated)": "pass", report: "written" }); },
+  "Unrelated test was already red": () => { Object.assign(lab.base, { "issues a token": "pass", "rejects an expired token": "pass", "legacy date parser (unrelated)": "fail" }); },
+  "Runner stops collecting the contract": () => { Object.assign(lab.after, { "issues a token": "missing", "rejects an expired token": "missing", "legacy date parser (unrelated)": "pass", report: "written" }); Object.assign(lab.base, { "issues a token": "fail", "rejects an expired token": "fail", "legacy date parser (unrelated)": "pass" }); },
+  "Report not written": () => { Object.assign(lab.after, { "issues a token": "fail", "rejects an expired token": "pass", "legacy date parser (unrelated)": "pass", report: "missing" }); lab.after["issues a token"] = "skip"; },
+};
+const lp = $("#lab-presets");
+for (const [k, f] of Object.entries(LAB_PRESETS)) { const bt = document.createElement("button"); bt.type = "button"; bt.className = "btn"; bt.textContent = k; bt.addEventListener("click", () => { f(); drawLab(); }); lp.appendChild(bt); }
+drawLab();
+
+/* ───────────── learning loop ───────────── */
+const INC = [
+  ["contract_too_weak", "Refused: contract already passes on base", "Assert the new behaviour in the contract test; this repo's parser already accepted ISO dates."],
+  ["protected_file_attempt", "Guard event on a protected path", "Gemini edits failing tests instead of code here; say in the brief which test is the spec."],
+  ["test_tampering", "Protected files restored, new skips, fewer tests", "Name the exact test file in <verification> so Gemini runs it instead of skipping."],
+  ["wrong_or_missing_gate", "Commands denied, or refused by the token gate", "Add \"npm run typecheck\" to allowed_commands; Gemini needs it for this repo."],
+  ["env_setup", "setup_command failed", "Run npm ci --no-audit; the audit call times out offline."],
+  ["timeout_too_short", "Run hit the print timeout", "UI tasks with Playwright need a 2400 s timeout here."],
+  ["brief_missing_context", "Failed, or passed only after a follow-up", "Models live in src/db/models, not models/; say so in the brief."],
+  ["quota", "429: the quota card was shown", "Batch small plan steps; each run spends a cold start."],
+];
+const incBox = $("#incidents");
+let incSel = 0; const hits = {};
+INC.forEach(([cat, when], i) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "inc";
+  b.innerHTML = `<b>${cat}</b><span>${esc(when)}</span>`;
+  b.addEventListener("click", () => { incSel = i; drawLearn(); });
+  incBox.appendChild(b);
+});
+function drawLearn() {
+  incBox.querySelectorAll(".inc").forEach((n, i) => n.setAttribute("aria-pressed", String(i === incSel)));
+  const [cat, , lesson] = INC[incSel]; const h = hits[cat] || 0;
+  $("#lesson-text").innerHTML = `<small>audience: implementer · scope: project · tag: ${esc(cat)}</small>${esc(lesson)}`;
+  $("#meter").querySelectorAll("i").forEach((n, i) => n.classList.toggle("on", i < h));
+  $("#hits").textContent = `${h}/3 hits`;
+  $("#lesson-add").disabled = h >= 3;
+  $("#promote-slot").innerHTML = h >= 3
+    ? `<div class="promote"><div class="eyebrow">approval card · promote lesson</div><h3>Add to the skill?</h3><p class="mono" style="font-size:.8rem">+ ${esc(lesson)}<br>→ skills/gemini-delegation/references/${cat === "wrong_or_missing_gate" || cat === "quota" ? "routing" : cat === "env_setup" || cat === "timeout_too_short" ? "known-issues" : "prompting"}.md</p><div class="row"><button class="btn primary" type="button" data-act="ok">Approve</button><button class="btn" type="button" data-act="no">Decline</button></div></div>`
+    : `<div class="vcard"><div class="tag">promotion</div><p>Recorded lessons go into matching briefs (top 5). At 3 hits you'll be asked to make this one a permanent rule.</p></div>`;
+  const pr = $("#promote-slot .promote");
+  if (pr) pr.addEventListener("click", (e) => {
+    const act = e.target.closest("button") && e.target.closest("button").dataset.act; if (!act) return;
+    pr.innerHTML = act === "ok" ? `<div class="eyebrow">promoted ${new Date().toISOString().slice(0, 10)}</div><p>Written to the installed skill and marked in lessons.md.</p>` : `<div class="eyebrow">declined</div><p>The lesson stays a project lesson; it isn't offered again.</p>`;
+  });
+}
+$("#lesson-add").addEventListener("click", () => { const cat = INC[incSel][0]; hits[cat] = Math.min(3, (hits[cat] || 0) + 1); drawLearn(); });
+hits.brief_missing_context = 2; incSel = 6; drawLearn();
+})();
+</script>
