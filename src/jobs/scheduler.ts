@@ -247,6 +247,7 @@ export class JobScheduler {
         ) {
           job.state = "error";
           job.errorReason = "orphaned: the server restarted before the job finished";
+          delete job.currentAttempt;
           job.progress.phase = "done";
           job.progress.percent = 100;
           job.updatedAt = this.deps.now().toISOString();

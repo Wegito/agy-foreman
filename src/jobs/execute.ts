@@ -180,7 +180,7 @@ export async function executeJob(
     );
     const variant = modelFor(model, effort);
     // Show the running attempt (status line, agy_get) while it runs, next to the finished ones.
-    record.attempts = [...attempts];
+    if (attempts.length > 0) record.attempts = [...attempts];
     record.currentAttempt = { tier, model: variant };
     record.updatedAt = ctx.deps.now().toISOString();
     await ctx.write(record);

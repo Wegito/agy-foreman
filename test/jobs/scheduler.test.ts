@@ -116,13 +116,16 @@ describe("JobScheduler", () => {
 
   it("marks queued and running records it does not own as orphaned errors", async () => {
     const t = setup({});
-    await t.store.write(rec("x", { state: "running" }));
+    await t.store.write(
+      rec("x", { state: "running", currentAttempt: { tier: "strong", model: "gemini-4-argon" } }),
+    );
     await t.store.write(rec("y", { state: "queued" }));
     await t.store.write(rec("z", { state: "passed" }));
     expect((await t.s.recoverOrphans()).sort()).toEqual(["x", "y"]);
     const x = await t.store.read("x");
     expect(x?.state).toBe("error");
     expect(x?.errorReason).toMatch(/restarted/);
+    expect(x).not.toHaveProperty("currentAttempt");
     expect((await t.store.read("y"))?.state).toBe("error");
     expect((await t.store.read("z"))?.state).toBe("passed");
   });
