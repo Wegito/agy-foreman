@@ -1,6 +1,6 @@
-# Models: Gemini 3.8 Flash
+# Models: Gemini 3.8 Flash and Gemini 4 Argon
 
-`agy-foreman` exclusively targets **Gemini 3.8 Flash**. Flash is universally available on consumer plans (including Google AI Pro promotional and trial tiers) and offers the most cost-effective token consumption against shared quota limits.
+`agy-foreman` targets two tiers. `fast` is **Gemini 3.8 Flash**, the default. `strong` is **Gemini 4 Argon**, used when `models` sets it, as the target for `tier: "strong"` and for escalation after a failed `fast` implement job. Flash is universally available on consumer plans (including Google AI Pro promotional and trial tiers) and offers the most cost-effective token consumption against shared quota limits.
 
 ## Supported Model Configurations
 
@@ -22,4 +22,4 @@ The `effort` parameter (`low`, `medium`, `high`) in `agy_start` adjusts reasonin
 
 ## Out of Scope Models
 
-Other models (such as Gemini 3.1 Pro, Gemini 3.7 / 3.6 Flash, or Argon) require Enterprise agreements or paid tiers not supported on consumer plans, or consume excessive quota pools. Anthropic and OpenAI models inside the Antigravity CLI are also out of scope; the orchestrator handles reasoning directly.
+Other models (such as Gemini 3.1 Pro or Gemini 3.7 / 3.6 Flash) require Enterprise agreements or paid tiers not supported on consumer plans, or consume excessive quota pools. Anthropic and OpenAI models inside the Antigravity CLI are also out of scope until the `backup` tier arrives in Plan 6b; the orchestrator handles reasoning directly.

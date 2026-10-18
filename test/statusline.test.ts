@@ -256,6 +256,8 @@ describe("cli statusline", () => {
       /^agy  ·  Incidents and the lesson store  ·  › running  ·  1m0[5-9]s · 0 tok\n\s$/,
     );
   });
+  // init asks `agy models`; never spawn the real thing in tests.
+  const noAgy = async () => ({ code: 1, stdout: "", stderr: "", timedOut: false });
   it("init does not touch Claude settings when no home is known", async () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init2-"));
     const out: string[] = [];
@@ -265,6 +267,7 @@ describe("cli statusline", () => {
         err: (s) => out.push(s),
         env: {},
         cwd: repo,
+        run: noAgy,
       }),
     ).toBe(0);
     expect(out.join("\n")).not.toContain("status line");
@@ -281,7 +284,13 @@ describe("cli statusline", () => {
       FOREMAN_STATE_DIR: mkdtempSync(path.join(os.tmpdir(), "foreman-st3-")),
     };
     expect(
-      await main(["init"], { out: (s) => out.push(s), err: (s) => out.push(s), env, cwd: repo }),
+      await main(["init"], {
+        out: (s) => out.push(s),
+        err: (s) => out.push(s),
+        env,
+        cwd: repo,
+        run: noAgy,
+      }),
     ).toBe(0);
     expect(out.join("\n")).toContain("status line: installed");
     expect(JSON.parse(readFileSync(settings, "utf8")).statusLine.command).toContain("statusline");

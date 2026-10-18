@@ -144,7 +144,7 @@ When a job fails, the failure is recorded as an incident and Claude writes a one
 
 ## Limitations
 
-- **Two model tiers.** `fast` is Gemini 3.8 Flash. `strong` is Gemini 4 Argon, and it is only used when `models` sets it (`init` does this when `agy models` lists Argon). Ask for it with `tier: "strong"` on `agy_start`. A failed implement job is retried once on `strong`, and a tier whose quota is spent hands the job to the next one up. Effort is still `low`, `medium` or `high`. Other models in agy aren't supported.
+- **Two model tiers.** `fast` is Gemini 3.8 Flash. `strong` is Gemini 4 Argon, and it is only used when `models` sets it (`init` does this when `agy models` lists Argon). Ask for it with `tier: "strong"` on `agy_start`. When `escalate` is true (the default once `models` is set), a failed implement job on `fast` is retried once on `strong`. A failed `strong` job is not retried. A tier whose quota is spent hands the job to the next one up. Effort is still `low`, `medium` or `high`. Other models in agy aren't supported.
 - **Implement jobs need a test command.** Without a machine check there is nothing to verify, so the skill tells Claude not to delegate.
 - **Contract tests need a JUnit report that names each test's file.** vitest and pytest do (`init` sets both up); jest needs jest-junit with `addFileAttribute`, and Go a converter such as gotestsum. Without `test_report`, jobs with contract tests are refused.
 - **Tasks that need a new dependency or a config change** can't be done by Gemini, since `package.json` and the runner config are protected. Make that change yourself first.
