@@ -165,7 +165,14 @@ export async function handleAct(
             rec.envelope.verify.counts.errors
           : 0;
       const total = rec.envelope.verify?.counts?.tests ?? 0;
-      const commitMsg = `${rec.title}\n\nImplemented-by: ${rec.envelope.model} via agy-foreman\nVerified: ${passed}/${total} tests`;
+      // The final attempt's full variant when there were attempts; else the envelope's model.
+      const attempts = rec.attempts ?? rec.envelope.attempts ?? [];
+      const model = attempts[attempts.length - 1]?.model ?? rec.envelope.model;
+      const history =
+        attempts.length > 1
+          ? `\nAttempts: ${attempts.map((a) => `${a.tier} ${a.model} ${a.state}`).join(" → ")}`
+          : "";
+      const commitMsg = `${rec.title}\n\nImplemented-by: ${model} via agy${history}\nVerified: ${passed}/${total} tests`;
       await git(["commit", "-m", commitMsg], rec.repoRoot);
       const commit = (await git(["rev-parse", "HEAD"], rec.repoRoot)).trim();
       await removeWorktree(wt, { deleteBranch: true });

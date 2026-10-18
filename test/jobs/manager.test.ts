@@ -704,3 +704,72 @@ describe("pipeline errors", () => {
     expect(rec?.errorReason).toBe("agy exploded");
   });
 });
+
+describe("tier visibility", () => {
+  it("status lists both tiers with their pools and cooldowns", async () => {
+    const { m, repo } = setup({
+      config: { models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" } },
+    });
+    const s = await m.status(repo);
+    expect(s.tiers).toEqual([
+      { tier: "fast", model: "gemini-3.8-flash", pool: "Gemini Models" },
+      { tier: "strong", model: "gemini-4-argon", pool: "Gemini 4 Argon" },
+    ]);
+  });
+
+  it("status without a strong tier shows no tier details", async () => {
+    const { m, repo } = setup();
+    const s = await m.status(repo);
+    expect(s).not.toHaveProperty("tiers");
+    expect(s).not.toHaveProperty("calibrationByTier");
+  });
+
+  it("finalize names the final attempt's model and lists the attempts", async () => {
+    const { m, deps, repo } = setup();
+    const g = (...a: string[]) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+    const wtPath = path.join(tmpRoot(), "wt");
+    g("worktree", "add", "-q", "-b", "agy/t-two", wtPath);
+    writeFileSync(path.join(wtPath, "b.txt"), "b");
+    execFileSync("git", ["add", "-A"], { cwd: wtPath });
+    execFileSync("git", ["commit", "-q", "-m", "work"], { cwd: wtPath });
+    const rec: JobRecord = {
+      id: "t-two",
+      kind: "implement",
+      repoRoot: repo,
+      title: "Two attempts",
+      tier: "fast",
+      model: "gemini-3.8-flash",
+      state: "passed",
+      progress: {
+        percent: 100,
+        phase: "report",
+        checklistDone: 0,
+        checklistTotal: 0,
+        toolSteps: 0,
+        tokens: 0,
+        elapsedSec: 0,
+      },
+      createdAt: "2026-10-17T12:00:00Z",
+      updatedAt: "2026-10-17T12:00:00Z",
+      returnedChars: 0,
+      attempts: [
+        { tier: "fast", model: "gemini-3.8-flash-high", state: "failed" },
+        { tier: "strong", model: "gemini-4-argon-high", state: "passed" },
+      ],
+      envelope: envelope({ jobId: "t-two", kind: "implement" } as JobSpec, "passed", {
+        branch: "agy/t-two",
+        worktreePath: wtPath,
+        model: "gemini-4-argon",
+      }),
+    };
+    await deps.store.write(rec);
+    expect(await m.act({ action: "finalize", jobId: "t-two", mode: "squash" })).toMatchObject({
+      state: "merged",
+    });
+    const msg = execFileSync("git", ["log", "-1", "--format=%B"], { cwd: repo }).toString();
+    expect(msg).toContain("Implemented-by: gemini-4-argon-high via agy\n");
+    expect(msg).toContain(
+      "Attempts: fast gemini-3.8-flash-high failed → strong gemini-4-argon-high passed",
+    );
+  });
+});

@@ -1,4 +1,5 @@
-import type { Config, Effort, Tier } from "../config.js";
+import { TIERS, type Config, type Effort, type Tier } from "../config.js";
+import { poolOf } from "../pools.js";
 import { git } from "../pipeline/exec.js";
 import type { Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
 import type { Approver } from "./approver.js";
@@ -243,6 +244,36 @@ export class JobManager {
     const today = await this.deps.ledger.stats(startOfToday);
     const calibration = await this.deps.ledger.calibration();
 
+    // Tier details appear only once a strong tier is configured; one-tier accounts see today's fields.
+    let tierInfo: Record<string, unknown> = {};
+    try {
+      const { tiers } = this.deps.loadConfig(
+        repoRoot ?? filteredJobs[0]?.repoRoot ?? process.cwd(),
+      ).project;
+      if (tiers.strong) {
+        const nowMs = this.deps.now().getTime();
+        const listed = TIERS.flatMap((tier) => {
+          const model = tiers[tier];
+          if (!model) return [];
+          const pool = poolOf(model);
+          const until = cooldowns.find((c) => c.pool === pool)?.until;
+          return [
+            {
+              tier,
+              model,
+              pool,
+              ...(until && new Date(until).getTime() > nowMs ? { coolingUntil: until } : {}),
+            },
+          ];
+        });
+        const byTier: Record<string, unknown> = {};
+        for (const t of listed) byTier[t.tier] = await this.deps.ledger.calibration(t.tier);
+        tierInfo = { tiers: listed, calibrationByTier: byTier };
+      }
+    } catch {
+      // an unreadable project config only hides the tier details
+    }
+
     let lessons: string[] = [];
     if (this.deps.lessons) {
       const rRoot = repoRoot ?? filteredJobs[0]?.repoRoot ?? process.cwd();
@@ -257,6 +288,7 @@ export class JobManager {
       queued,
       today,
       calibration,
+      ...tierInfo,
       lessons,
     };
   }

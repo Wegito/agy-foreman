@@ -313,3 +313,49 @@ describe("task markers", () => {
     expect(at(0)).not.toBe(at(2000));
   });
 });
+
+describe("tier visibility", () => {
+  const S = "  ·  ";
+  const flat = {
+    fiveHour: { remaining: 71, resetAt: "" },
+    weekly: { remaining: 12, resetAt: "" },
+    fetchedAt: "",
+  };
+  const pooled = {
+    ...flat,
+    pools: {
+      "Gemini Models": { fiveHour: flat.fiveHour, weekly: flat.weekly },
+      "Gemini 4 Argon": { fiveHour: { remaining: 33, resetAt: "" } },
+    },
+  };
+  const strong = () => job({ id: "t-s", tier: "strong", model: "gemini-4-argon-high" });
+
+  it("keeps a fast job's line byte-identical without pools", () => {
+    expect(renderStatusLine([job({ id: "t-a" })], NOW, { color: false, quota: flat })).toBe(
+      ["agy", "Incidents and the lesson store", "› running", "4m12s · 0 tok", "5h 71% 7d 12%"].join(
+        S,
+      ),
+    );
+  });
+  it("adds an argon segment for a strong job", () => {
+    expect(renderStatusLine([strong()], NOW, { color: false })).toBe(
+      ["agy", "Incidents and the lesson store", "› running", "4m12s · 0 tok", "argon"].join(S),
+    );
+  });
+  it("reads the shown job's pool, and falls back to the flat fields without pools", () => {
+    expect(renderStatusLine([strong()], NOW, { color: false, quota: pooled })).toMatch(
+      /argon  ·  5h 33%$/,
+    );
+    expect(renderStatusLine([job({ id: "t-a" })], NOW, { color: false, quota: pooled })).toMatch(
+      /5h 71% 7d 12%$/,
+    );
+    expect(renderStatusLine([strong()], NOW, { color: false, quota: flat })).toMatch(
+      /argon  ·  5h 71% 7d 12%$/,
+    );
+  });
+  it("drops argon before the title when narrow", () => {
+    const line = renderStatusLine([strong()], NOW, { color: false, columns: 70 });
+    expect(line).not.toContain("argon");
+    expect(line).toContain("Incidents and the lesson store");
+  });
+});

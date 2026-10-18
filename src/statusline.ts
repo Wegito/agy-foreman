@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { isTerminal, type JobRecord } from "./jobs/store.js";
 import { runCommand } from "./pipeline/exec.js";
+import { poolOf } from "./pools.js";
 import type { QuotaSnapshot, QuotaWindow } from "./usage-quota.js";
 
 const ansi = (code: string, s: string, color: boolean) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -187,9 +188,14 @@ export function renderStatusLine(
     const plain = `${formatElapsed(now.getTime() - Date.parse(j.createdAt))} · ${formatTokens(j.progress.tokens)} tok`;
     return seg(plain, plain, 60);
   };
-  const quotaSegs = (): Segment[] => {
+  const quotaSegs = (j?: JobRecord): Segment[] => {
     const q = o.quota;
-    if (!q || (!q.fiveHour && !q.weekly)) return [];
+    if (!q) return [];
+    // The pool of the shown job's model; the flat fields are the Gemini Models pool (and the only
+    // data an older cache has).
+    const pool = j ? poolOf(j.model) : "Gemini Models";
+    const win = q.pools?.[pool] ?? (!q.pools || pool === "Gemini Models" ? q : undefined);
+    if (!win || (!win.fiveHour && !win.weekly)) return [];
     const level = (n: number) => (n >= 50 ? "32" : n >= 20 ? "33" : "31");
     const part = (name: string, w?: QuotaWindow) =>
       w
@@ -198,11 +204,15 @@ export function renderStatusLine(
             text: `${dim(name)} ${ansi(level(w.remaining), `${Math.round(w.remaining)}%`, color)}`,
           }
         : undefined;
-    const parts = [part("5h", q.fiveHour), part("7d", q.weekly)].filter(
+    const parts = [part("5h", win.fiveHour), part("7d", win.weekly)].filter(
       (x): x is { plain: string; text: string } => !!x,
     );
     return [seg(parts.map((x) => x.plain).join(" "), parts.map((x) => x.text).join(" "), 50)];
   };
+
+  /** A strong job says so; fast jobs (today's only kind) add nothing. */
+  const tierSegs = (j: JobRecord): Segment[] =>
+    j.tier === "strong" ? [seg("argon", dim("argon"), 50)] : [];
 
   const active = activeJobs(jobs);
   const j = shownJob(jobs);
@@ -211,7 +221,13 @@ export function renderStatusLine(
     const others = active.length - 1;
     if (j.state === "queued") {
       return fit(
-        [label, seg("queued", ansi("33", "queued", color), 90), titleSeg(j, 48), ...quotaSegs()],
+        [
+          label,
+          seg("queued", ansi("33", "queued", color), 90),
+          titleSeg(j, 48),
+          ...tierSegs(j),
+          ...quotaSegs(j),
+        ],
         columns,
         sep,
         sepPlain,
@@ -250,7 +266,7 @@ export function renderStatusLine(
         70,
       ),
     );
-    segments.push(totalsSeg(j), ...quotaSegs());
+    segments.push(totalsSeg(j), ...tierSegs(j), ...quotaSegs(j));
     if (others > 0) segments.push(seg(`+${others} more`, dim(`+${others} more`), 10));
     return fit(segments, columns, sep, sepPlain);
   }

@@ -55,4 +55,26 @@ describe("Ledger", () => {
       tokens: 0,
     });
   });
+
+  it("calibrates per tier only with at least 5 entries of that tier", async () => {
+    const mk = () =>
+      new Ledger(path.join(mkdtempSync(path.join(os.tmpdir(), "foreman-led-")), "ledger.jsonl"));
+    const withEst = (tier: "fast" | "strong", returned: number) =>
+      e({
+        tier,
+        returnedTokens: returned,
+        estimate: { directTokens: 1, delegateOverheadTokens: 1000, reason: "" },
+      });
+    const few = mk();
+    for (let n = 0; n < 3; n++) await few.append(withEst("strong", 2000));
+    for (let n = 0; n < 10; n++) await few.append(withEst("fast", 1000));
+    expect(await few.calibration("strong")).toEqual({ samples: 13, ratio: 1, scope: "all" });
+
+    const enough = mk();
+    for (let n = 0; n < 5; n++) await enough.append(withEst("strong", 2000));
+    for (let n = 0; n < 10; n++) await enough.append(withEst("fast", 1000));
+    expect(await enough.calibration("strong")).toEqual({ samples: 5, ratio: 2, scope: "tier" });
+    expect(await enough.calibration()).toMatchObject({ samples: 15 });
+    expect(await enough.calibration()).not.toHaveProperty("scope");
+  });
 });

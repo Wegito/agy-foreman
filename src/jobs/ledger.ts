@@ -22,6 +22,13 @@ export interface LedgerEntry {
   attempts?: Attempt[];
 }
 
+const MIN_TIER_SAMPLES = 5;
+
+const hasOverhead = (e: LedgerEntry) =>
+  !!e.estimate &&
+  typeof e.estimate.delegateOverheadTokens === "number" &&
+  e.estimate.delegateOverheadTokens > 0;
+
 export class Ledger {
   constructor(readonly file: string) {}
 
@@ -61,20 +68,22 @@ export class Ledger {
     return values[mid];
   }
 
-  async calibration(): Promise<{ samples: number; ratio?: number }> {
-    const list = await this.entries();
+  /** Per tier, uses only that tier's entries once there are `MIN_TIER_SAMPLES` of them, else all. */
+  async calibration(
+    tier?: Tier,
+  ): Promise<{ samples: number; ratio?: number; scope?: "tier" | "all" }> {
+    const all = await this.entries();
+    const own = tier ? all.filter((e) => e.tier === tier) : all;
+    const scoped = tier && own.filter(hasOverhead).length >= MIN_TIER_SAMPLES;
+    const list = scoped ? own : all;
+    const scope = tier ? { scope: scoped ? ("tier" as const) : ("all" as const) } : {};
     const ratios = list
-      .filter(
-        (e) =>
-          e.estimate &&
-          typeof e.estimate.delegateOverheadTokens === "number" &&
-          e.estimate.delegateOverheadTokens > 0,
-      )
+      .filter(hasOverhead)
       .map((e) => e.returnedTokens / e.estimate!.delegateOverheadTokens)
       .sort((a, b) => a - b);
 
     if (ratios.length === 0) {
-      return { samples: 0 };
+      return { samples: 0, ...scope };
     }
 
     const mid = Math.floor(ratios.length / 2);
@@ -85,7 +94,7 @@ export class Ledger {
       ratio = ratios[mid];
     }
 
-    return { samples: ratios.length, ratio };
+    return { samples: ratios.length, ratio, ...scope };
   }
 
   async stats(since: Date): Promise<{ jobs: number; passed: number; tokens: number }> {
