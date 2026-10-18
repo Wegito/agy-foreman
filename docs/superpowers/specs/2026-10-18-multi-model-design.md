@@ -142,6 +142,9 @@ Token calibration and the delegate-vs-direct refusal (`refuse_ratio`) currently 
   - `Gemini 4 Argon` (weekly only).
 - A headless Argon run (`--model gemini-4-argon-low --output-format stream-json`) returns the same `init` / `step_update` / `result` events, with `usage`, that the pipeline already parses.
 - Bug fixed on branch `feat/multi-model` (in the working tree, not yet committed): the Argon weekly row overwrote the Gemini Models weekly value in `parseUsage` (regression test in `test/usage-quota.test.ts`).
+- Plan 6a built and reviewed on `feat/multi-model`. `npm run test:ci`: 377 of 378 tests pass, and the one failure is the pre-existing fsutil EPERM test listed below.
+- Live, against real agy after `npm run build`: in a fresh repo, `agy-foreman init` wrote `"models": { "fast": "gemini-3.8-flash", "strong": "gemini-4-argon" }` and `"escalate": true`. `agy-foreman doctor` reported `tiers: fast gemini-3.8-flash · strong gemini-4-argon`.
+- Still to check by hand, which needs a restarted Claude Code session: delegate a small task with `tier: "strong"`. Expect an approval card naming Gemini 4 Argon (high), and a commit trailer `Implemented-by: gemini-4-argon-high via agy`.
 - Pre-existing, unrelated: `test/jobs/fsutil.test.ts` "survives many overlapping writes…" fails on the author's Windows machine with `EPERM` on rename, with and without these changes.
 
 ## 9. Later: parallel workers across connected CLIs (not in this version)
