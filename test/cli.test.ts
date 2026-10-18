@@ -202,6 +202,16 @@ describe("detectTestCommand and init", () => {
     expect(thrown.code).toBe(0);
     expect(thrown.cfg).toEqual({ test_command: ["go", "test", "./..."] });
   });
+  it("init asks agy models with a 15 s timeout and treats a timeout as no Argon", async () => {
+    const seen: (number | undefined)[] = [];
+    const r = await initWith(async (_argv, o) => {
+      seen.push(o?.timeoutMs);
+      return { code: null, stdout: "gemini-4-argon-high\tArgon", stderr: "", timedOut: true };
+    });
+    expect(seen).toEqual([15000]);
+    expect(r.code).toBe(0);
+    expect(r.cfg).toEqual({ test_command: ["go", "test", "./..."] });
+  });
 });
 
 describe("doctor", () => {
@@ -237,6 +247,25 @@ describe("doctor", () => {
     });
     expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["node", "agy login", "git"]);
     expect(checks.find((c) => c.name === "agy login")?.detail).toMatch(/run `agy` once/);
+  });
+  it("asks agy models with a 15 s timeout and fails the login check when it times out", async () => {
+    const seen: Record<string, number | undefined> = {};
+    const checks = await doctor({
+      nodeVersion: "v22.1.0",
+      model: "gemini-3.8-flash",
+      run: async (argv, o) => {
+        seen[argv.join(" ")] = o?.timeoutMs;
+        return argv[0] === "git"
+          ? ok("git version 2.54.0")
+          : argv[1] === "models"
+            ? { code: null, stdout: "gemini-3.8-flash-high\tFlash", stderr: "", timedOut: true }
+            : ok("1.4.0");
+      },
+    });
+    expect(seen["agy models"]).toBe(15000);
+    const login = checks.find((c) => c.name === "agy login");
+    expect(login?.ok).toBe(false);
+    expect(login?.detail).toMatch(/timed out/);
   });
   it("reports the tiers, and fails when a configured tier's model is not listed", async () => {
     const run = async (argv: string[]) =>

@@ -52,8 +52,14 @@ export interface Io {
   env: NodeJS.ProcessEnv;
   cwd: string;
   /** Runs a command; defaults to a real spawn. Tests fake it (`init` asks `agy models`). */
-  run?: (argv: string[]) => Promise<ExecResult>;
+  run?: Run;
 }
+
+/** Runs a command, optionally with a timeout (runCommand's own option). */
+export type Run = (argv: string[], o?: { timeoutMs?: number }) => Promise<ExecResult>;
+
+/** `agy models` can hang on a stale login; init and doctor give it this long. */
+const AGY_MODELS_TIMEOUT_MS = 15_000;
 
 export function waitExitCode(state: string): number {
   if (state === "passed") return 0;
@@ -163,11 +169,11 @@ export function detectTestCommand(repoRoot: string): {
 
 /** Adds the strong tier to a new config when `agy models` lists Argon. Any failure means no change. */
 async function detectArgon(
-  run: (argv: string[]) => Promise<ExecResult>,
+  run: Run,
 ): Promise<{ models?: { fast: string; strong: string }; escalate?: boolean }> {
   try {
-    const res = await run(["agy", "models"]);
-    if (res.code === 0 && /^\s*gemini-4-argon/m.test(res.stdout)) {
+    const res = await run(["agy", "models"], { timeoutMs: AGY_MODELS_TIMEOUT_MS });
+    if (res.code === 0 && !res.timedOut && /^\s*gemini-4-argon/m.test(res.stdout)) {
       return { models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" }, escalate: true };
     }
   } catch {
@@ -183,7 +189,7 @@ export interface DoctorCheck {
 }
 
 export async function doctor(d: {
-  run: (argv: string[]) => Promise<ExecResult>;
+  run: Run;
   model: string;
   /** Configured tiers; defaults to a lone fast tier on `model`. */
   tiers?: { fast: string; strong?: string };
@@ -221,12 +227,14 @@ export async function doctor(d: {
   let loginOk = false;
   let loginDetail = "";
   try {
-    const res = await d.run(["agy", "models"]);
+    const res = await d.run(["agy", "models"], { timeoutMs: AGY_MODELS_TIMEOUT_MS });
     const tiers = d.tiers ?? { fast: d.model };
     const missing = [tiers.fast, ...(tiers.strong ? [tiers.strong] : [])].filter(
       (m) => !res.stdout.includes(m),
     );
-    if (res.code === 0 && missing.length === 0) {
+    if (res.timedOut) {
+      loginDetail = `\`agy models\` timed out after ${AGY_MODELS_TIMEOUT_MS / 1000}s; run \`agy\` once interactively to log in`;
+    } else if (res.code === 0 && missing.length === 0) {
       loginOk = true;
       const shown = tiers.strong ? `fast ${tiers.fast} · strong ${tiers.strong}` : "fast only";
       loginDetail = `logged in (model ${d.model} available); tiers: ${shown}`;
@@ -413,7 +421,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
       io.err(".agy-foreman.json already exists");
       return 1;
     }
-    const run = io.run ?? ((args: string[]) => runCommand(args, { cwd: io.cwd, env: io.env }));
+    const run: Run = io.run ?? ((args, o) => runCommand(args, { cwd: io.cwd, env: io.env, ...o }));
     const detected = { ...detectTestCommand(io.cwd), ...(await detectArgon(run)) };
     writeFileSync(targetFile, JSON.stringify(detected, null, 2) + "\n", "utf8");
     io.out("Register with Claude Code:\n  claude mcp add agy-foreman -- npx -y agy-foreman serve");
@@ -435,7 +443,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
       nodeVersion: process.version,
       model: cfg.project.model,
       tiers: cfg.project.tiers,
-      run: io.run ?? ((args) => runCommand(args, { cwd: io.cwd, env: io.env })),
+      run: io.run ?? ((args, o) => runCommand(args, { cwd: io.cwd, env: io.env, ...o })),
     });
     for (const c of checks) {
       const mark = c.ok ? "✓" : "✗";

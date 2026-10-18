@@ -2,7 +2,7 @@
 
 # agy-foreman
 
-Hand plan tasks from Claude Code to Gemini 3.8 Flash as headless, CI-style runs of the Antigravity CLI, and merge only what passes your tests.
+Hand plan tasks from Claude Code to Gemini (3.8 Flash by default, 4 Argon as the strong tier) as headless, CI-style runs of the Antigravity CLI, and merge only what passes your tests.
 
 [![CI](https://github.com/mountaser/agy-foreman/actions/workflows/ci.yml/badge.svg)](https://github.com/mountaser/agy-foreman/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -15,7 +15,7 @@ agy 🟢🟢🟢🟢🟢🟢🔵 6/7 tasks · #7 You shall not pass · › runni
 
 _The Claude Code status line while Gemini works on the last task of a plan. Each task gets a marker: done, running, failed or not started._
 
-agy-foreman lets Claude Code hand tasks from a plan to Gemini 3.8 Flash through Google's `agy` CLI. Each task runs in agy's headless mode, which Google's docs describe for scripting and CI, and is treated like a CI job: one non-interactive `agy -p` run with a fixed brief, in its own git worktree. The server then runs your tests on the result, and only branches that pass get merged.
+agy-foreman lets Claude Code hand tasks from a plan to Gemini 3.8 Flash, or to Gemini 4 Argon for harder steps, through Google's `agy` CLI. Each task runs in agy's headless mode, which Google's docs describe for scripting and CI, and is treated like a CI job: one non-interactive `agy -p` run with a fixed brief, in its own git worktree. The server then runs your tests on the result, and only branches that pass get merged.
 
 It works with plans written by [Superpowers](https://github.com/obra/superpowers) and changes written with [OpenSpec](https://github.com/Fission-AI/OpenSpec), as well as one-off tasks.
 
