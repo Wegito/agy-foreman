@@ -17,6 +17,13 @@ describe("parseUsage", () => {
       fetchedAt: NOW.toISOString(),
       fiveHour: { remaining: 71, resetAt: "2026-10-17T17:23:02Z" },
       weekly: { remaining: 88, resetAt: "2026-10-20T00:00:00Z" },
+      pools: {
+        "Gemini Models": {
+          fiveHour: { remaining: 71, resetAt: "2026-10-17T17:23:02Z" },
+          weekly: { remaining: 88, resetAt: "2026-10-20T00:00:00Z" },
+        },
+        "Claude Models": { fiveHour: { remaining: 5, resetAt: "2026-10-17T15:00:00Z" } },
+      },
     });
   });
 
@@ -29,10 +36,19 @@ describe("parseUsage", () => {
       "Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-10-25T16:46:09Z",
       "Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t100%\t2026-10-25T16:45:41Z",
     ].join("\n");
-    expect(parseUsage(text, NOW)).toEqual({
+    const snap = parseUsage(text, NOW);
+    expect(snap).toMatchObject({
       fetchedAt: NOW.toISOString(),
       fiveHour: { remaining: 95, resetAt: "2026-10-18T20:13:17Z" },
       weekly: { remaining: 99, resetAt: "2026-10-25T15:13:17Z" },
+    });
+    expect(snap.pools).toEqual({
+      "Gemini Models": {
+        weekly: { remaining: 99, resetAt: "2026-10-25T15:13:17Z" },
+        fiveHour: { remaining: 95, resetAt: "2026-10-18T20:13:17Z" },
+      },
+      "Claude and GPT models": { weekly: { remaining: 100, resetAt: "2026-10-25T16:46:09Z" } },
+      "Gemini 4 Argon": { weekly: { remaining: 100, resetAt: "2026-10-25T16:45:41Z" } },
     });
   });
 });

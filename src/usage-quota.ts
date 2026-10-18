@@ -12,6 +12,8 @@ export interface QuotaWindow {
 export interface QuotaSnapshot {
   fiveHour?: QuotaWindow;
   weekly?: QuotaWindow;
+  /** Every pool in the report, by name as printed. fiveHour/weekly above are the Gemini Models pool. */
+  pools?: Record<string, { fiveHour?: QuotaWindow; weekly?: QuotaWindow }>;
   fetchedAt: string;
 }
 
@@ -25,18 +27,25 @@ export function quotaFile(env: NodeJS.ProcessEnv): string {
 /**
  * Parses the tab-separated `agy -p /usage` report, e.g.
  * `Gemini Models\tFive Hour Limit Remaining\t71%\t2026-10-17T17:23:02Z`.
- * Only the "Gemini Models" pool matters: Claude/GPT models and Gemini 4 Argon have separate pools.
+ * Every pool is kept under `pools`; fiveHour/weekly stay the "Gemini Models" pool (the status line
+ * reads them), since Claude/GPT models and Gemini 4 Argon have separate pools.
  */
 export function parseUsage(text: string, now: Date): QuotaSnapshot {
   const snap: QuotaSnapshot = { fetchedAt: now.toISOString() };
   for (const line of text.split(/\r?\n/)) {
     const cols = line.split("\t").map((c) => c.trim());
-    if (cols.length < 4 || !/^gemini models$/i.test(cols[0])) continue;
+    if (cols.length < 4) continue;
     const remaining = Number.parseFloat(cols[2]);
     if (!Number.isFinite(remaining)) continue;
     const w: QuotaWindow = { remaining, resetAt: cols[3] };
-    if (/five hour/i.test(cols[1])) snap.fiveHour = w;
-    else if (/weekly/i.test(cols[1])) snap.weekly = w;
+    const key = /five hour/i.test(cols[1])
+      ? "fiveHour"
+      : /weekly/i.test(cols[1])
+        ? "weekly"
+        : undefined;
+    if (!key) continue;
+    ((snap.pools ??= {})[cols[0]] ??= {})[key] = w;
+    if (/^gemini models$/i.test(cols[0])) snap[key] = w;
   }
   return snap;
 }
