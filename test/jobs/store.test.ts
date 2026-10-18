@@ -13,6 +13,8 @@ import {
 const rec = (id: string, createdAt: string, state: JobRecord["state"] = "running"): JobRecord => ({
   id,
   kind: "implement",
+  tier: "fast",
+  model: "gemini-3.8-flash",
   repoRoot: "/r",
   title: "t",
   state,

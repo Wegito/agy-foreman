@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { modelLabel } from "../pools.js";
 import { buildArgs } from "../agy/run.js";
 import type { Config } from "../config.js";
 import { renderBrief, RUN_PROMPT } from "../pipeline/brief.js";
@@ -31,6 +32,7 @@ export type PreparedStart =
       spec: JobSpec;
       config: Config;
       lessonsInjected: number;
+      note?: string;
     };
 
 export async function prepareStartJob(
@@ -44,13 +46,24 @@ export async function prepareStartJob(
   const config = deps.loadConfig(i.repoRoot);
 
   // 1-2. Policy check
-  const check = await policy.check(i.repoRoot, config.project.tiers, "fast");
+  const check = await policy.check(i.repoRoot, config.project.tiers, i.tier ?? "fast");
   if (!check.ok) {
     return {
       type: "result",
       result: check.result,
     };
   }
+
+  const { tier, model } = check;
+  const effort = i.effort ?? config.project.effort;
+  // A failed fast implement job gets one retry on the strong tier when escalation is on.
+  const escalatesTo =
+    i.kind === "implement" &&
+    config.project.escalate &&
+    tier === "fast" &&
+    config.project.tiers.strong
+      ? modelLabel(config.project.tiers.strong, effort)
+      : undefined;
 
   // 3. Resolve the task
   let task: string;
@@ -168,8 +181,8 @@ export async function prepareStartJob(
       {
         prompt: RUN_PROMPT,
         cwd: i.repoRoot,
-        model: config.project.model,
-        effort: i.effort ?? config.project.effort,
+        model,
+        effort,
         mode: i.kind === "explore" ? "plan" : "accept-edits",
         timeoutSec: i.timeoutSec ?? config.runtime.defaultTimeoutSec,
         skipPermissions: config.runtime.skipPermissions,
@@ -240,6 +253,9 @@ export async function prepareStartJob(
           planFile,
           title: pTitle,
           steps,
+          model,
+          effort,
+          ...(escalatesTo ? { escalatesTo } : {}),
           estimate: i.estimate,
           repoRoot: i.repoRoot,
         });
@@ -252,8 +268,10 @@ export async function prepareStartJob(
       const taskCard: TaskCard = {
         title,
         kind: i.kind,
-        effort: i.effort ?? config.project.effort,
+        effort,
         skills: i.skills ?? [],
+        model,
+        ...(escalatesTo ? { escalatesTo } : {}),
         estimate: i.estimate,
         repoRoot: i.repoRoot,
       };
@@ -279,6 +297,8 @@ export async function prepareStartJob(
     kind: i.kind,
     repoRoot: i.repoRoot,
     title,
+    tier,
+    model,
     state: "queued",
     // Seed the checklist so the status line shows "1/N <task>" before Gemini's first tick.
     progress: checklist
@@ -300,10 +320,10 @@ export async function prepareStartJob(
     checklist,
     skills: i.skills,
     ...(lessonsInjected.length > 0 ? { lessons: lessonsInjected } : {}),
-    effort: i.effort ?? config.project.effort,
+    effort,
     baseRef: i.baseRef,
     timeoutSec: i.timeoutSec ?? config.runtime.defaultTimeoutSec,
-    config: config.project,
+    config: { ...config.project, model },
     runtime: config.runtime,
   };
 
@@ -313,5 +333,6 @@ export async function prepareStartJob(
     spec,
     config,
     lessonsInjected: lessonsInjected.length,
+    ...(check.note ? { note: check.note } : {}),
   };
 }

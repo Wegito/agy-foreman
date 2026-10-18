@@ -19,6 +19,8 @@ import { main, type Io } from "../src/cli.js";
 const NOW = new Date("2026-10-17T14:10:00Z");
 const job = (o: Partial<JobRecord> & { id: string }): JobRecord => ({
   kind: "implement",
+  tier: "fast",
+  model: "gemini-3.8-flash",
   repoRoot: "/r",
   title: "Incidents and the lesson store",
   state: "running",

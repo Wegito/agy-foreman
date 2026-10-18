@@ -104,6 +104,62 @@ describe("JobManager.start", () => {
     expect(specs[0]).toMatchObject({ kind: "implement", task: "Fix add()\nmore detail" });
   });
 
+  describe("tiers", () => {
+    const MODELS = { models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" } };
+    const req = (repo: string, tier?: "fast" | "strong") => ({
+      repoRoot: repo,
+      kind: "implement" as const,
+      task: "x",
+      estimate: EST,
+      ...(tier ? { tier } : {}),
+    });
+
+    it("runs a strong job on the strong model and records the tier", async () => {
+      const { m, repo, specs } = setup({ config: MODELS });
+      const r = await m.start(req(repo, "strong"));
+      expect(r).toMatchObject({ state: "running", tier: "strong", model: "gemini-4-argon" });
+      await m.idle();
+      expect(specs[0].config.model).toBe("gemini-4-argon");
+      const rec = await m.get((r as { jobId: string }).jobId);
+      expect(rec).toMatchObject({ tier: "strong", model: "gemini-4-argon" });
+    });
+
+    it("defaults to the fast tier", async () => {
+      const { m, repo, specs } = setup({ config: MODELS });
+      const r = await m.start(req(repo));
+      expect(r).toMatchObject({ tier: "fast", model: "gemini-3.8-flash" });
+      await m.idle();
+      expect(specs[0].config.model).toBe("gemini-3.8-flash");
+    });
+
+    it("refuses strong when no strong tier is configured", async () => {
+      const { m, repo } = setup();
+      expect(await m.start(req(repo, "strong"))).toEqual({
+        state: "refused",
+        reason: "no strong tier configured (set models.strong in .agy-foreman.json)",
+      });
+    });
+
+    it("moves up to strong when the fast pool is cooling, with a note", async () => {
+      const { m, repo, deps, specs } = setup({ config: MODELS });
+      await deps.flags.update((f) => {
+        f.cooldowns = { "Gemini Models": { until: "2026-10-17T13:00:00Z" } };
+      });
+      const r = await m.start(req(repo));
+      expect(r).toMatchObject({ tier: "strong", model: "gemini-4-argon" });
+      expect((r as { note?: string }).note).toContain("Gemini Models");
+      await m.idle();
+      expect(specs[0].config.model).toBe("gemini-4-argon");
+    });
+
+    it("names the chosen model on the task card", async () => {
+      const { m, repo, approver } = setup({ config: MODELS });
+      await m.start(req(repo, "strong"));
+      await m.idle();
+      expect(approver.calls[0].card).toMatchObject({ model: "gemini-4-argon" });
+    });
+  });
+
   it("refuses without an estimate or when delegating is cheaper to skip", async () => {
     const { m, repo } = setup();
     expect(await m.start({ repoRoot: repo, kind: "implement", task: "x" })).toMatchObject({

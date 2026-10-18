@@ -13,6 +13,7 @@ describe("tool inputs", () => {
       skills: ["s"],
       estimate: { direct_tokens: 1, delegate_overhead_tokens: 2, reason: "r" },
       effort: "low",
+      tier: "strong",
       dry_run: true,
       base_ref: "main",
     });
@@ -26,6 +27,7 @@ describe("tool inputs", () => {
       skills: ["s"],
       estimate: { directTokens: 1, delegateOverheadTokens: 2, reason: "r" },
       effort: "low",
+      tier: "strong",
       dryRun: true,
       baseRef: "main",
     });

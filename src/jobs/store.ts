@@ -37,11 +37,16 @@ export interface Progress {
   etaSec?: number;
 }
 
+import type { Tier } from "../config.js";
+
 export interface JobRecord {
   id: string;
   kind: "implement" | "explore";
   repoRoot: string;
   title: string;
+  /** The tier this job was started on, and its base model (the first attempt). */
+  tier: Tier;
+  model: string;
   state: RecordState;
   progress: Progress;
   createdAt: string;

@@ -1,4 +1,4 @@
-import type { Config, Effort } from "../config.js";
+import type { Config, Effort, Tier } from "../config.js";
 import { git } from "../pipeline/exec.js";
 import type { Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
 import type { Approver } from "./approver.js";
@@ -27,13 +27,22 @@ export interface StartInput {
   skills?: string[];
   estimate?: Estimate;
   effort?: Effort;
+  tier?: Tier;
   dryRun?: boolean;
   baseRef?: string;
   timeoutSec?: number;
 }
 
 export type StartResult =
-  | { state: "queued" | "running"; jobId: string; waitHint: string; lessonsInjected?: number }
+  | {
+      state: "queued" | "running";
+      jobId: string;
+      waitHint: string;
+      lessonsInjected?: number;
+      tier: Tier;
+      model: string;
+      note?: string;
+    }
   | { state: "refused" | "denied"; reason: string }
   | {
       state: "quota";
@@ -133,7 +142,7 @@ export class JobManager {
     if (prep.type === "result") {
       return prep.result;
     }
-    const { record, spec, lessonsInjected } = prep;
+    const { record, spec, lessonsInjected, note } = prep;
     const state = await this.scheduler.submit(record, spec);
 
     return {
@@ -141,6 +150,9 @@ export class JobManager {
       jobId: record.id,
       waitHint: `agy-foreman wait ${record.id}`,
       lessonsInjected,
+      tier: record.tier,
+      model: record.model,
+      ...(note ? { note } : {}),
     };
   }
 

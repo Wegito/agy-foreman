@@ -17,9 +17,24 @@ describe("RepoApprover", () => {
 
   it("routes each card by the gate of the card's repo", async () => {
     const { a, elicitation, client } = make();
-    expect(await a.plan({ planFile: "p.md", title: "t", steps: [1], repoRoot: "/b" })).toBe(true);
     expect(
-      await a.task({ title: "t", kind: "implement", effort: "high", skills: [], repoRoot: "/a" }),
+      await a.plan({
+        planFile: "p.md",
+        title: "t",
+        steps: [1],
+        model: "gemini-3.8-flash",
+        repoRoot: "/b",
+      }),
+    ).toBe(true);
+    expect(
+      await a.task({
+        title: "t",
+        kind: "implement",
+        effort: "high",
+        skills: [],
+        model: "gemini-3.8-flash",
+        repoRoot: "/a",
+      }),
     ).toBe(false);
     expect(client.calls.map((c) => c.kind)).toEqual(["plan"]);
     expect(elicitation.calls.map((c) => c.kind)).toEqual(["task"]);

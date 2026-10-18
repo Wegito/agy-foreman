@@ -1,9 +1,15 @@
+import type { Effort } from "../config.js";
+import { modelLabel } from "../pools.js";
 import type { Estimate } from "./store.js";
 
 export interface PlanCard {
   planFile: string;
   title: string;
   steps: number[];
+  model: string;
+  effort?: string;
+  /** Label of the tier a failed implement job retries on. */
+  escalatesTo?: string;
   estimate?: Estimate;
   repoRoot?: string;
 }
@@ -13,6 +19,8 @@ export interface TaskCard {
   kind: "implement" | "explore";
   effort: string;
   skills: string[];
+  model: string;
+  escalatesTo?: string;
   estimate?: Estimate;
   repoRoot?: string;
 }
@@ -54,22 +62,26 @@ function formatK(tokens: number): string {
   return `${val}k`;
 }
 
+function escalatePart(c: { escalatesTo?: string }): string {
+  return c.escalatesTo ? `\nIf tests fail: one retry on ${c.escalatesTo}` : "";
+}
+
 export function planCardText(c: PlanCard): string {
   const estimatePart = c.estimate
     ? `\nDoing it myself: ~${formatK(c.estimate.directTokens)} tokens · Delegating: ~${formatK(c.estimate.delegateOverheadTokens)} tokens`
     : "";
   const stepsPart = c.steps.length === 0 ? "all steps" : c.steps.join(", ");
-  return `Delegate plan "${c.title}" to Gemini 3.8 Flash?\n${c.planFile} · steps for Gemini: ${stepsPart}${estimatePart}`;
+  return `Delegate plan "${c.title}" to ${modelLabel(c.model, c.effort as Effort | undefined)}?\n${c.planFile} · steps for Gemini: ${stepsPart}${escalatePart(c)}${estimatePart}`;
 }
 
 export function taskCardText(c: TaskCard): string {
   const skillsPart = c.skills && c.skills.length > 0 ? ` · skills: ${c.skills.join(", ")}` : "";
-  const line1 = `Delegate to Gemini 3.8 Flash (${c.effort})? "${c.title}"${skillsPart}`;
+  const line1 = `Delegate to ${modelLabel(c.model, c.effort as Effort)}? "${c.title}"${skillsPart}`;
   const estimatePart = c.estimate
     ? `\nDoing it myself: ~${formatK(c.estimate.directTokens)} tokens · Delegating: ~${formatK(c.estimate.delegateOverheadTokens)} tokens`
     : "";
   const reasonPart = c.estimate?.reason ? `\nWhy: ${c.estimate.reason}` : "";
-  return `${line1}${estimatePart}${reasonPart}`;
+  return `${line1}${escalatePart(c)}${estimatePart}${reasonPart}`;
 }
 
 function poolResetLabel(resetAt: string): string {

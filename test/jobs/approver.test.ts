@@ -13,6 +13,7 @@ describe("card texts", () => {
       planFile: "docs/p.md",
       title: "Foundation",
       steps: [5, 6, 8],
+      model: "gemini-3.8-flash",
       estimate: { directTokens: 55000, delegateOverheadTokens: 14000, reason: "" },
     });
     expect(t).toContain('Delegate plan "Foundation" to Gemini 3.8 Flash?');
@@ -25,6 +26,7 @@ describe("card texts", () => {
       kind: "implement",
       effort: "high",
       skills: ["tdd"],
+      model: "gemini-3.8-flash",
       estimate: {
         directTokens: 18000,
         delegateOverheadTokens: 4200,
@@ -35,6 +37,29 @@ describe("card texts", () => {
     expect(t).toContain("~18k tokens");
     expect(t).toContain("~4.2k tokens");
     expect(t).toContain("Why: 9-file change");
+  });
+  it("names the chosen model and the escalation target on the cards", () => {
+    const base = {
+      title: "T",
+      kind: "implement" as const,
+      effort: "high",
+      skills: [],
+      model: "gemini-4-argon",
+    };
+    expect(taskCardText(base)).toMatch(/^Delegate to Gemini 4 Argon \(high\)\? "T"/);
+    expect(taskCardText(base)).not.toContain("If tests fail");
+    expect(taskCardText({ ...base, escalatesTo: "Gemini 4 Argon (high)" })).toContain(
+      "If tests fail: one retry on Gemini 4 Argon (high)",
+    );
+    const plan = {
+      planFile: "p.md",
+      title: "P",
+      steps: [1],
+      model: "gemini-4-argon",
+      escalatesTo: "Gemini 4 Argon (high)",
+    };
+    expect(planCardText(plan)).toContain('Delegate plan "P" to Gemini 4 Argon?');
+    expect(planCardText(plan)).toContain("If tests fail: one retry on Gemini 4 Argon (high)");
   });
   it("renders the quota card neutrally", () => {
     const t = quotaCardText({
@@ -70,14 +95,34 @@ describe("card texts", () => {
 describe("approvers", () => {
   it("client mode approves and cannot show the quota card", async () => {
     const a = new ClientModeApprover();
-    expect(await a.plan({ planFile: "p", title: "t", steps: [1] })).toBe(true);
-    expect(await a.task({ title: "t", kind: "explore", effort: "low", skills: [] })).toBe(true);
+    expect(await a.plan({ planFile: "p", title: "t", steps: [1], model: "gemini-3.8-flash" })).toBe(
+      true,
+    );
+    expect(
+      await a.task({
+        title: "t",
+        kind: "explore",
+        effort: "low",
+        skills: [],
+        model: "gemini-3.8-flash",
+      }),
+    ).toBe(true);
     expect(await a.quota({})).toBe("unavailable");
   });
   it("fake approver records calls", async () => {
     const a = new FakeApprover({ plan: false, quota: "retry" });
-    expect(await a.plan({ planFile: "p", title: "t", steps: [1] })).toBe(false);
-    expect(await a.task({ title: "t", kind: "explore", effort: "low", skills: [] })).toBe(true);
+    expect(await a.plan({ planFile: "p", title: "t", steps: [1], model: "gemini-3.8-flash" })).toBe(
+      false,
+    );
+    expect(
+      await a.task({
+        title: "t",
+        kind: "explore",
+        effort: "low",
+        skills: [],
+        model: "gemini-3.8-flash",
+      }),
+    ).toBe(true);
     expect(await a.quota({})).toBe("retry");
     expect(a.calls.map((c) => c.kind)).toEqual(["plan", "task", "quota"]);
   });

@@ -35,6 +35,10 @@ export const startShape = {
     .optional()
     .describe("Token estimate"),
   effort: z.enum(["low", "medium", "high"]).optional().describe("Effort level"),
+  tier: z
+    .enum(["fast", "strong"])
+    .optional()
+    .describe("Model tier (default fast; strong needs models.strong in .agy-foreman.json)"),
   dry_run: z.boolean().optional().describe("Dry run flag"),
   base_ref: z.string().optional().describe("Base git ref"),
 } satisfies z.ZodRawShape;
@@ -91,6 +95,7 @@ export function toStartInput(args: StartArgs, defaultRepoRoot: string): StartInp
         }
       : undefined,
     effort: args.effort,
+    tier: args.tier,
     dryRun: args.dry_run,
     baseRef: args.base_ref,
   };

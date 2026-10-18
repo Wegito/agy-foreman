@@ -9,6 +9,8 @@ import { JobStore, emptyProgress, type JobRecord } from "../../src/jobs/store.js
 const rec = (extra: Partial<JobRecord> = {}): JobRecord => ({
   id: "t-1",
   kind: "implement",
+  tier: "fast",
+  model: "gemini-3.8-flash",
   repoRoot: "/repo",
   title: "t",
   state: "running",

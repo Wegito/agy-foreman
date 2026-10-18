@@ -112,9 +112,27 @@ describe("ElicitationApprover", () => {
       return answers.shift() as never;
     });
     const a = new ElicitationApprover(server);
-    expect(await a.plan({ planFile: "p.md", title: "Demo", steps: [1] })).toBe(true);
-    expect(await a.task({ title: "t", kind: "explore", effort: "low", skills: [] })).toBe(false);
-    expect(await a.task({ title: "t", kind: "explore", effort: "low", skills: [] })).toBe(false);
+    expect(
+      await a.plan({ planFile: "p.md", title: "Demo", steps: [1], model: "gemini-3.8-flash" }),
+    ).toBe(true);
+    expect(
+      await a.task({
+        title: "t",
+        kind: "explore",
+        effort: "low",
+        skills: [],
+        model: "gemini-3.8-flash",
+      }),
+    ).toBe(false);
+    expect(
+      await a.task({
+        title: "t",
+        kind: "explore",
+        effort: "low",
+        skills: [],
+        model: "gemini-3.8-flash",
+      }),
+    ).toBe(false);
     expect(await a.quota({ resetText: "10m" })).toBe("continue_without");
     expect(await a.quota({ resetText: "10m" })).toBe("wait");
     expect(messages[0]).toContain('Delegate plan "Demo"');
@@ -123,9 +141,9 @@ describe("ElicitationApprover", () => {
   it("is unavailable without the elicitation capability", async () => {
     const { server } = await connect(fakeManager([]));
     const a = new ElicitationApprover(server);
-    await expect(a.plan({ planFile: "p", title: "t", steps: [1] })).rejects.toBeInstanceOf(
-      ApprovalUnavailable,
-    );
+    await expect(
+      a.plan({ planFile: "p", title: "t", steps: [1], model: "gemini-3.8-flash" }),
+    ).rejects.toBeInstanceOf(ApprovalUnavailable);
     expect(await a.quota({})).toBe("unavailable");
   });
 });

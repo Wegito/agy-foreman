@@ -21,6 +21,8 @@ function io(env: NodeJS.ProcessEnv = {}, cwd = os.tmpdir()) {
 const rec = (id: string, state: JobRecord["state"]): JobRecord => ({
   id,
   kind: "implement",
+  tier: "fast",
+  model: "gemini-3.8-flash",
   repoRoot: "/r",
   title: "t",
   state,

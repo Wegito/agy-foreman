@@ -61,6 +61,8 @@ describe("renderProgressLine", () => {
     const rec: JobRecord = {
       id: "t-x",
       kind: "implement",
+      tier: "fast",
+      model: "gemini-3.8-flash",
       repoRoot: "/r",
       title: "t",
       state: "running",

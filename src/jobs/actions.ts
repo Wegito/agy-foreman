@@ -25,6 +25,9 @@ export async function startFollowup(
   bypassApproval: boolean,
 ): Promise<{ state: "running" | "queued"; jobId: string }> {
   const config = ctx.deps.loadConfig(parent.repoRoot);
+  // A follow-up continues on the parent's model (records from before tiers have none).
+  const tier = parent.tier ?? "fast";
+  const model = parent.model ?? config.project.model;
   if (!bypassApproval) {
     let needApproval = true;
     if (parent.plan) {
@@ -47,6 +50,7 @@ export async function startFollowup(
         kind: "implement",
         effort: config.project.effort,
         skills: [],
+        model,
         estimate: parent.estimate,
         repoRoot: parent.repoRoot,
       });
@@ -62,6 +66,8 @@ export async function startFollowup(
     kind: "implement",
     repoRoot: parent.repoRoot,
     title: parent.title,
+    tier,
+    model,
     state: "queued",
     progress: emptyProgress(),
     createdAt: ctx.deps.now().toISOString(),
@@ -81,7 +87,7 @@ export async function startFollowup(
     baseRef: parent.envelope?.branch ?? `agy/${parent.id}`,
     conversationId: parent.envelope?.conversationId,
     timeoutSec: config.runtime.defaultTimeoutSec,
-    config: config.project,
+    config: { ...config.project, model },
     runtime: config.runtime,
   };
 

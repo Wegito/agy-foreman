@@ -13,6 +13,8 @@ function rec(id: string, extra: Partial<JobRecord> = {}): JobRecord {
   return {
     id,
     kind: "implement",
+    tier: "fast",
+    model: "gemini-3.8-flash",
     repoRoot: "/repo",
     title: id,
     state: "queued",
