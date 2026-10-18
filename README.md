@@ -64,7 +64,7 @@ flowchart LR
     J --> P[Pipeline]
     subgraph P[Pipeline: one job]
       direction TB
-      W[worktree + setup] --> R[contract tests<br/>must fail] --> B[brief + skills<br/>+ tool-call gate] --> A[agy -p<br/>Gemini 3.8 Flash] --> V[server-side verify] --> M[commit + merge check]
+      W[worktree + setup] --> R[contract tests<br/>must fail] --> B[brief + skills<br/>+ tool-call gate] --> A[agy -p<br/>Gemini Flash / Argon] --> V[server-side verify] --> M[commit + merge check]
     end
     P -- envelope --> J
     J -- wake --> C
@@ -122,27 +122,29 @@ When a job fails, the failure is recorded as an incident and Claude writes a one
 }
 ```
 
-| Key                  | Default       | Meaning                                                                 |
-| -------------------- | ------------- | ----------------------------------------------------------------------- |
-| `test_command`       | none          | Command the server runs to verify                                       |
-| `test_report`        | none          | JUnit report: test counts, and required to check contract tests         |
-| `setup_command`      | none          | Runs in each new worktree                                               |
-| `allowed_commands`   | `[]`          | Extra commands Gemini may run, as whole words (`npx tsc` ≠ `npx tsc-x`) |
-| `unknown_commands`   | `deny`        | `deny`, `allow` or `ask_user`                                           |
-| `protected_paths`    | see below     | Files Gemini may not change                                             |
-| `approval`           | `per_plan`    | `per_plan` or `per_task`                                                |
-| `effort`             | `high`        | `low`, `medium` or `high`                                               |
-| `max_concurrent`     | `2`           | Jobs at once                                                            |
-| `max_runs_per_hour`  | `10`          | Hourly cap                                                              |
-| `refuse_ratio`       | `1.5`         | When delegating costs more than doing it                                |
-| `allowed_mcp`, `web` | `[]`, `false` | MCP tools and web access for Gemini                                     |
-| `gate`               | `elicitation` | `client` if your client has no approval cards                           |
+| Key                  | Default                            | Meaning                                                                 |
+| -------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
+| `test_command`       | none                               | Command the server runs to verify                                       |
+| `test_report`        | none                               | JUnit report: test counts, and required to check contract tests         |
+| `setup_command`      | none                               | Runs in each new worktree                                               |
+| `allowed_commands`   | `[]`                               | Extra commands Gemini may run, as whole words (`npx tsc` ≠ `npx tsc-x`) |
+| `unknown_commands`   | `deny`                             | `deny`, `allow` or `ask_user`                                           |
+| `protected_paths`    | see below                          | Files Gemini may not change                                             |
+| `approval`           | `per_plan`                         | `per_plan` or `per_task`                                                |
+| `effort`             | `high`                             | `low`, `medium` or `high`                                               |
+| `models`             | none                               | Tiers: `{ "fast": "gemini-3.8-flash", "strong": "gemini-4-argon" }`     |
+| `escalate`           | `true` with `models`, else `false` | Retry a failed implement job once on the next tier up                   |
+| `max_concurrent`     | `2`                                | Jobs at once                                                            |
+| `max_runs_per_hour`  | `10`                               | Hourly cap                                                              |
+| `refuse_ratio`       | `1.5`                              | When delegating costs more than doing it                                |
+| `allowed_mcp`, `web` | `[]`, `false`                      | MCP tools and web access for Gemini                                     |
+| `gate`               | `elicitation`                      | `client` if your client has no approval cards                           |
 
 `protected_paths` defaults to the tests (`test/**`, `tests/**`, `*.test.*`, `*.spec.*`, `test_*.py`, `*_test.*`, `conftest.py`), the files that decide how they run (`package.json`, vitest, vite, jest, playwright, karma and mocha config, `tsconfig*.json`, `pyproject.toml`, `pytest.ini`, `setup.cfg`, `tox.ini`, `Makefile`), and `.agy-foreman.json`. Setting it replaces the whole list.
 
 ## Limitations
 
-- **Gemini 3.8 Flash only**, with effort `low`, `medium` or `high`. Other models in agy need plans that this project doesn't target.
+- **Two model tiers.** `fast` is Gemini 3.8 Flash. `strong` is Gemini 4 Argon, and it is only used when `models` sets it (`init` does this when `agy models` lists Argon). Ask for it with `tier: "strong"` on `agy_start`. A failed implement job is retried once on `strong`, and a tier whose quota is spent hands the job to the next one up. Effort is still `low`, `medium` or `high`. Other models in agy aren't supported.
 - **Implement jobs need a test command.** Without a machine check there is nothing to verify, so the skill tells Claude not to delegate.
 - **Contract tests need a JUnit report that names each test's file.** vitest and pytest do (`init` sets both up); jest needs jest-junit with `addFileAttribute`, and Go a converter such as gotestsum. Without `test_report`, jobs with contract tests are refused.
 - **Tasks that need a new dependency or a config change** can't be done by Gemini, since `package.json` and the runner config are protected. Make that change yourself first.

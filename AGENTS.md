@@ -4,7 +4,7 @@ This document provides instructions for coding agents and orchestrators operatin
 
 ## Gemini Delegation Protocol
 
-When delegating coding tasks or implementation steps to Gemini 3.8 Flash, refer to the full specification and rules in [skills/gemini-delegation/SKILL.md](skills/gemini-delegation/SKILL.md).
+When delegating coding tasks or implementation steps to Gemini (3.8 Flash by default, 4 Argon as the strong tier), refer to the full specification and rules in [skills/gemini-delegation/SKILL.md](skills/gemini-delegation/SKILL.md).
 
 ### The 4 MCP Tools
 

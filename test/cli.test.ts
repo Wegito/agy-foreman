@@ -149,13 +149,58 @@ describe("detectTestCommand and init", () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init-"));
     writeFileSync(path.join(repo, "go.mod"), "module x\n");
     const a = io({}, repo);
+    a.i.run = async () => ({ code: 1, stdout: "", stderr: "", timedOut: false });
     expect(await main(["init"], a.i)).toBe(0);
     expect(JSON.parse(readFileSync(path.join(repo, ".agy-foreman.json"), "utf8"))).toEqual({
       test_command: ["go", "test", "./..."],
     });
     expect(a.out.join("\n")).toContain("claude mcp add agy-foreman -- npx -y agy-foreman serve");
-    expect(await main(["init"], io({}, repo).i)).toBe(1);
+    expect(await main(["init"], a.i)).toBe(1);
     expect(existsSync(path.join(repo, ".agy-foreman.json"))).toBe(true);
+  });
+
+  const initWith = async (run: NonNullable<Io["run"]>) => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "foreman-init-"));
+    writeFileSync(path.join(repo, "go.mod"), "module x\n");
+    const a = io({}, repo);
+    a.i.run = run;
+    const code = await main(["init"], a.i);
+    return {
+      code,
+      err: a.err,
+      cfg: JSON.parse(readFileSync(path.join(repo, ".agy-foreman.json"), "utf8")),
+    };
+  };
+  const okRun = (stdout: string) => async () => ({ code: 0, stdout, stderr: "", timedOut: false });
+
+  it("init adds the strong tier when agy lists Argon", async () => {
+    const r = await initWith(
+      okRun("gemini-3.8-flash-high\tFlash\ngemini-4-argon-high\tGemini 4 Argon"),
+    );
+    expect(r.code).toBe(0);
+    expect(r.cfg).toEqual({
+      test_command: ["go", "test", "./..."],
+      models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" },
+      escalate: true,
+    });
+  });
+  it("init leaves the config alone without Argon or when agy models fails", async () => {
+    const plain = await initWith(okRun("gemini-3.8-flash-high\tFlash"));
+    expect(plain.cfg).toEqual({ test_command: ["go", "test", "./..."] });
+    const failed = await initWith(async () => ({
+      code: 1,
+      stdout: "",
+      stderr: "authentication required",
+      timedOut: false,
+    }));
+    expect(failed.code).toBe(0);
+    expect(failed.err).toEqual([]);
+    expect(failed.cfg).toEqual({ test_command: ["go", "test", "./..."] });
+    const thrown = await initWith(async () => {
+      throw new Error("spawn agy ENOENT");
+    });
+    expect(thrown.code).toBe(0);
+    expect(thrown.cfg).toEqual({ test_command: ["go", "test", "./..."] });
   });
 });
 
@@ -192,6 +237,34 @@ describe("doctor", () => {
     });
     expect(checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["node", "agy login", "git"]);
     expect(checks.find((c) => c.name === "agy login")?.detail).toMatch(/run `agy` once/);
+  });
+  it("reports the tiers, and fails when a configured tier's model is not listed", async () => {
+    const run = async (argv: string[]) =>
+      argv[0] === "git"
+        ? ok("git version 2.54.0")
+        : argv[1] === "models"
+          ? ok("gemini-3.8-flash-high\tFlash\ngemini-4-argon-high\tArgon")
+          : ok("1.4.0");
+    const good = await doctor({
+      nodeVersion: "v22.1.0",
+      model: "gemini-3.8-flash",
+      tiers: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" },
+      run,
+    });
+    const login = good.find((c) => c.name === "agy login");
+    expect(login?.ok).toBe(true);
+    expect(login?.detail).toContain("tiers: fast gemini-3.8-flash · strong gemini-4-argon");
+    const bad = await doctor({
+      nodeVersion: "v22.1.0",
+      model: "gemini-3.8-flash",
+      tiers: { fast: "gemini-3.8-flash", strong: "gemini-9" },
+      run,
+    });
+    const badLogin = bad.find((c) => c.name === "agy login");
+    expect(badLogin?.ok).toBe(false);
+    expect(badLogin?.detail).toContain("gemini-9");
+    const fastOnly = await doctor({ nodeVersion: "v22.1.0", model: "gemini-3.8-flash", run });
+    expect(fastOnly.find((c) => c.name === "agy login")?.detail).toContain("fast only");
   });
 });
 

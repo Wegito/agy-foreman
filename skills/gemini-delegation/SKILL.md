@@ -33,6 +33,14 @@ The orchestrator writes contract tests up front, isolates work in an external gi
 7. **Quota Exhaustion**: If quota is hit, present the user with the quota card options: `Retry now`, `Continue without Gemini`, or `Wait for reset`. Never decide autonomously.
 8. **Learn from Every Failure**: After any failed run or task requiring follow-ups, reflect and record an actionable lesson using `agy_act(job_id, action: "lesson")`.
 
+## Tiers
+
+Projects can configure two tiers: `fast` (Gemini 3.8 Flash) and `strong` (Gemini 4 Argon). `agy_status` shows which are set up.
+
+- Start on `fast`. Pass `tier: "strong"` to `agy_start` for work that spans many files, has tricky logic, or retries a job that failed.
+- Escalation is automatic. When a `fast` implement job fails, the server retries it once on `strong` with the same contract tests. Check the result's attempts before acting, and don't re-delegate a job that already escalated.
+- When a tier's quota runs out, the job moves up to the next tier. The quota card appears only when nothing at or above the starting tier is free.
+
 ## Worked Example: End-to-End Plan Step Run
 
 ```text

@@ -48,6 +48,8 @@ export interface Io {
   stdin?: () => Promise<string>;
   env: NodeJS.ProcessEnv;
   cwd: string;
+  /** Runs a command; defaults to a real spawn. Tests fake it (`init` asks `agy models`). */
+  run?: (argv: string[]) => Promise<ExecResult>;
 }
 
 export function waitExitCode(state: string): number {
@@ -156,6 +158,21 @@ export function detectTestCommand(repoRoot: string): {
   return {};
 }
 
+/** Adds the strong tier to a new config when `agy models` lists Argon. Any failure means no change. */
+async function detectArgon(
+  run: (argv: string[]) => Promise<ExecResult>,
+): Promise<{ models?: { fast: string; strong: string }; escalate?: boolean }> {
+  try {
+    const res = await run(["agy", "models"]);
+    if (res.code === 0 && /^\s*gemini-4-argon/m.test(res.stdout)) {
+      return { models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" }, escalate: true };
+    }
+  } catch {
+    // agy missing or logged out: init still works, with one tier.
+  }
+  return {};
+}
+
 export interface DoctorCheck {
   name: string;
   ok: boolean;
@@ -165,6 +182,8 @@ export interface DoctorCheck {
 export async function doctor(d: {
   run: (argv: string[]) => Promise<ExecResult>;
   model: string;
+  /** Configured tiers; defaults to a lone fast tier on `model`. */
+  tiers?: { fast: string; strong?: string };
   nodeVersion: string;
 }): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
@@ -200,11 +219,16 @@ export async function doctor(d: {
   let loginDetail = "";
   try {
     const res = await d.run(["agy", "models"]);
-    if (res.code === 0 && res.stdout.includes(d.model)) {
+    const tiers = d.tiers ?? { fast: d.model };
+    const missing = [tiers.fast, ...(tiers.strong ? [tiers.strong] : [])].filter(
+      (m) => !res.stdout.includes(m),
+    );
+    if (res.code === 0 && missing.length === 0) {
       loginOk = true;
-      loginDetail = `logged in (model ${d.model} available)`;
+      const shown = tiers.strong ? `fast ${tiers.fast} · strong ${tiers.strong}` : "fast only";
+      loginDetail = `logged in (model ${d.model} available); tiers: ${shown}`;
     } else {
-      loginDetail = `model ${d.model} not available or authentication required; run \`agy\` once interactively to log in`;
+      loginDetail = `model ${(missing.length ? missing : [d.model]).join(", ")} not available or authentication required; run \`agy\` once interactively to log in`;
     }
   } catch (e) {
     loginDetail = `run \`agy\` once interactively to log in: ${(e as Error).message}`;
@@ -380,7 +404,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
       io.err(".agy-foreman.json already exists");
       return 1;
     }
-    const detected = detectTestCommand(io.cwd);
+    const run = io.run ?? ((args: string[]) => runCommand(args, { cwd: io.cwd, env: io.env }));
+    const detected = { ...detectTestCommand(io.cwd), ...(await detectArgon(run)) };
     writeFileSync(targetFile, JSON.stringify(detected, null, 2) + "\n", "utf8");
     io.out("Register with Claude Code:\n  claude mcp add agy-foreman -- npx -y agy-foreman serve");
     // The status line is on by default; it only touches Claude Code settings when a home dir is known.
@@ -400,7 +425,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
     const checks = await doctor({
       nodeVersion: process.version,
       model: cfg.project.model,
-      run: (args) => runCommand(args, { cwd: io.cwd, env: io.env }),
+      tiers: cfg.project.tiers,
+      run: io.run ?? ((args) => runCommand(args, { cwd: io.cwd, env: io.env })),
     });
     for (const c of checks) {
       const mark = c.ok ? "✓" : "✗";
