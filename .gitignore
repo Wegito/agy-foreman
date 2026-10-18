@@ -5,3 +5,4 @@ dist/
 package/
 test/.tmp/
 reports/
+.superpowers/
