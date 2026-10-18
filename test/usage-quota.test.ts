@@ -19,6 +19,22 @@ describe("parseUsage", () => {
       weekly: { remaining: 88, resetAt: "2026-10-20T00:00:00Z" },
     });
   });
+
+  // Regression (found live, agy with Gemini 4 Argon access): Argon has its own weekly pool, and its
+  // row also starts with "Gemini" and says "Weekly", so it overwrote the Gemini Models weekly value.
+  it("does not let the Gemini 4 Argon pool overwrite the Gemini Models weekly row", () => {
+    const text = [
+      "Gemini Models\tWeekly Limit Remaining\t99%\t2026-10-25T15:13:17Z",
+      "Gemini Models\tFive Hour Limit Remaining\t95%\t2026-10-18T20:13:17Z",
+      "Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-10-25T16:46:09Z",
+      "Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t100%\t2026-10-25T16:45:41Z",
+    ].join("\n");
+    expect(parseUsage(text, NOW)).toEqual({
+      fetchedAt: NOW.toISOString(),
+      fiveHour: { remaining: 95, resetAt: "2026-10-18T20:13:17Z" },
+      weekly: { remaining: 99, resetAt: "2026-10-25T15:13:17Z" },
+    });
+  });
 });
 
 // Regression (found live): the status line started `agy -p /usage` every minute even when idle, and

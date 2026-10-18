@@ -25,13 +25,13 @@ export function quotaFile(env: NodeJS.ProcessEnv): string {
 /**
  * Parses the tab-separated `agy -p /usage` report, e.g.
  * `Gemini Models\tFive Hour Limit Remaining\t71%\t2026-10-17T17:23:02Z`.
- * Only the Gemini rows matter (Claude/GPT models have a separate pool).
+ * Only the "Gemini Models" pool matters: Claude/GPT models and Gemini 4 Argon have separate pools.
  */
 export function parseUsage(text: string, now: Date): QuotaSnapshot {
   const snap: QuotaSnapshot = { fetchedAt: now.toISOString() };
   for (const line of text.split(/\r?\n/)) {
     const cols = line.split("\t").map((c) => c.trim());
-    if (cols.length < 4 || !/^gemini/i.test(cols[0])) continue;
+    if (cols.length < 4 || !/^gemini models$/i.test(cols[0])) continue;
     const remaining = Number.parseFloat(cols[2]);
     if (!Number.isFinite(remaining)) continue;
     const w: QuotaWindow = { remaining, resetAt: cols[3] };
