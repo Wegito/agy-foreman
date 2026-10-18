@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="65%">
+      <stop offset="0" stop-color="#26303f"/><stop offset="1" stop-color="#141a23"/>
+    </radialGradient>
+    <clipPath id="disc"><circle cx="128" cy="128" r="122"/></clipPath>
+    <clipPath id="head"><ellipse cx="128" cy="134" rx="46" ry="50"/></clipPath>
+    <clipPath id="dome"><path d="M78 112 C78 56 178 56 178 112 Z"/></clipPath>
+    <clipPath id="vest"><path d="M30 262 C34 212 68 194 106 192 L114 262 Z M226 262 C222 212 188 194 150 192 L142 262 Z"/></clipPath>
+    <clipPath id="neck"><rect x="111" y="164" width="34" height="34"/></clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="124" fill="url(#bg)"/>
+  <circle cx="128" cy="128" r="112" fill="none" stroke="#ffffff" stroke-opacity=".06" stroke-width="1.5"/>
+  <g clip-path="url(#disc)" stroke="#0e1116" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- body -->
+    <path d="M30 262 C34 212 68 194 128 192 C188 194 222 212 226 262 Z" fill="#3a4556"/>
+    <path d="M30 262 C34 212 68 194 106 192 L114 262 Z M226 262 C222 212 188 194 150 192 L142 262 Z" fill="#f5b301"/>
+    <g clip-path="url(#vest)" stroke="none">
+      <path d="M150 192 C190 196 222 214 226 262 L196 262 C196 226 180 204 150 196 Z" fill="#d68f00"/>
+      <rect x="20" y="226" width="220" height="10" fill="#f1ebdd"/>
+    </g>
+    <path d="M30 262 C34 212 68 194 106 192 L114 262 Z M226 262 C222 212 188 194 150 192 L142 262 Z" fill="none"/>
+    <path d="M110 191 L128 212 L119 186 Z M146 191 L128 212 L137 186 Z" fill="#4c596d" stroke-width="4"/>
+    <!-- neck -->
+    <rect x="111" y="164" width="34" height="32" fill="#f0c29b"/>
+    <g clip-path="url(#neck)" stroke="none"><ellipse cx="128" cy="166" rx="22" ry="10" fill="#d99e78"/></g>
+    <!-- ears -->
+    <circle cx="83" cy="140" r="11" fill="#f0c29b"/><circle cx="173" cy="140" r="11" fill="#f0c29b"/>
+    <path d="M80 136 Q86 140 81 146 M176 136 Q170 140 175 146" fill="none" stroke="#d99e78" stroke-width="3"/>
+    <!-- head + shading -->
+    <ellipse cx="128" cy="134" rx="46" ry="50" fill="#f0c29b"/>
+    <g clip-path="url(#head)" stroke="none">
+      <ellipse cx="128" cy="106" rx="52" ry="10" fill="#d99e78"/>
+      <path d="M160 100 C178 120 176 160 150 186 L190 186 L190 100 Z" fill="#e3ad86"/>
+    </g>
+    <ellipse cx="128" cy="134" rx="46" ry="50" fill="none"/>
+    <!-- face -->
+    <path d="M102 124 Q112 118 121 122 M135 122 Q144 118 154 124" fill="none" stroke="#5b3a24" stroke-width="5.5"/>
+    <g stroke="none">
+      <ellipse cx="112" cy="135" rx="5" ry="6.5" fill="#0e1116"/><ellipse cx="144" cy="135" rx="5" ry="6.5" fill="#0e1116"/>
+      <circle cx="113.8" cy="132.6" r="1.7" fill="#fff"/><circle cx="145.8" cy="132.6" r="1.7" fill="#fff"/>
+    </g>
+    <path d="M128 140 C138 140 140 152 132 154 L124 154 C116 152 118 140 128 140 Z" fill="#e3a47c" stroke-width="4"/>
+    <path d="M128 157 C120 151 104 150 96 160 C92 165 86 165 82 160 C84 173 101 175 113 168 C120 165 124 164 128 164 C132 164 136 165 143 168 C155 175 172 173 174 160 C170 165 164 165 160 160 C152 150 136 151 128 157 Z" fill="#5b3a24" stroke-width="4.5"/>
+    <path d="M104 158 C112 155 120 157 126 160 M130 160 C136 157 144 155 152 158" fill="none" stroke="#7a5133" stroke-width="3"/>
+    <path d="M118 174 Q128 181 138 174" fill="none" stroke-width="4"/>
+    <!-- hard hat --><g transform="translate(0 -7)">
+    <path d="M78 112 C78 56 178 56 178 112 Z" fill="#f5b301"/>
+    <g clip-path="url(#dome)" stroke="none">
+      <path d="M146 112 C160 92 158 70 140 60 L190 60 L190 112 Z" fill="#d68f00"/>
+    </g>
+    <g clip-path="url(#dome)"><path d="M93 102 C92 88 98 77 108 71" fill="none" stroke="#ffd866" stroke-width="5"/></g>
+    <path d="M120 112 L121 66 Q128 61 135 66 L136 112 Z" fill="#ffc933" stroke-width="4.5"/>
+    <path d="M78 112 C78 56 178 56 178 112 Z" fill="none"/>
+    <path d="M60 111 Q128 98 196 111 Q199 121 191 124 Q128 113 65 124 Q57 121 60 111 Z" fill="#e6a100"/>
+    </g>
+    <!-- clipboard -->
+    <g transform="rotate(-9 192 216)">
+      <rect x="166" y="180" width="54" height="70" rx="7" fill="#2a3240"/>
+      <rect x="173" y="191" width="40" height="52" rx="3" fill="#f1ebdd" stroke-width="3.5"/>
+      <rect x="182" y="173" width="22" height="13" rx="4" fill="#9aa4b2" stroke-width="3.5"/>
+      <g fill="none" stroke-width="4">
+        <path d="M178 204 L182 208 L189 200 M178 218 L182 222 L189 214 M178 232 L182 236 L189 228" stroke="#2ea043"/>
+        <path d="M195 204 L207 204 M195 218 L207 218 M195 232 L203 232" stroke="#9aa4b2" stroke-width="3.5"/>
+      </g>
+      <ellipse cx="168" cy="220" rx="10" ry="14" fill="#f0c29b"/>
+    </g>
+  </g>
+  <circle cx="128" cy="128" r="123" fill="none" stroke="#0e1116" stroke-width="5"/>
+  <circle cx="128" cy="128" r="126.5" fill="none" stroke="#ffffff" stroke-opacity=".16" stroke-width="1.5"/>
+</svg>
