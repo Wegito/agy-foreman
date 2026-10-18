@@ -356,7 +356,7 @@ describe("attempts", () => {
     expect(specs[1].conversationId).toBeUndefined();
     expect(specs[1].task).toContain("Failing tests: adds 2");
     expect(specs[1].task).toContain("expected 3 to be 4");
-    expect(specs[1].baseRef).toBe(specs[0].baseRef);
+    expect(specs[1].baseRef).toBe("b"); // attempt 1's baseSha
     expect(rec.state).toBe("passed");
     expect(rec.envelope!.jobId).toBe(rec.id);
     expect(rec.envelope!.branch).toBe(`agy/${rec.id}-a2`);
@@ -463,6 +463,53 @@ describe("attempts", () => {
     expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
     const cooldowns = (await deps.flags.read()).cooldowns;
     expect(Object.keys(cooldowns).sort()).toEqual(["Gemini 4 Argon", "Gemini Models"]);
+  });
+
+  it("starts later attempts from the first attempt's base commit even if HEAD moved", async () => {
+    let base = "";
+    const { m, repo, specs, deps } = setup({
+      config: TIERS_CFG,
+      result: (s) => {
+        if (isStrong(s)) return envelope(s, "passed");
+        const g = (...a: string[]) =>
+          execFileSync("git", a, { cwd: s.repoRoot, encoding: "utf8" }).trim();
+        base = g("rev-parse", "HEAD");
+        writeFileSync(path.join(s.repoRoot, "moved.txt"), "moved");
+        g("add", "moved.txt");
+        g("commit", "-q", "-m", "user moved HEAD");
+        return envelope(s, "failed", { baseSha: base, verify: VERIFY_FAIL });
+      },
+    });
+    await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(2);
+    expect(base).toMatch(/^[0-9a-f]{40}$/);
+    expect(specs[1].baseRef).toBe(base);
+  });
+
+  it("stops without the quota card when strong hits the quota after fast failed", async () => {
+    const approver = new FakeApprover({ quota: "retry" });
+    const { m, repo, specs, deps } = setup({
+      approver,
+      config: TIERS_CFG,
+      result: (s) =>
+        isStrong(s)
+          ? envelope(s, "quota", { quota: { resetInSec: 600 } })
+          : envelope(s, "failed", { verify: VERIFY_FAIL }),
+    });
+    const rec = await waitTerminal(deps, await m.start(impl(repo)));
+    await m.idle();
+    expect(specs).toHaveLength(2);
+    expect(approver.calls.filter((c) => c.kind === "quota")).toEqual([]);
+    expect(rec.state).toBe("quota");
+    expect(rec.envelope!.reason).toContain("escalation stopped");
+    expect(rec.envelope!.reason).toBe(
+      "Gemini 4 Argon is cooling down; escalation stopped after fast failed verification",
+    );
+    expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([
+      ["fast", "failed"],
+      ["strong", "quota"],
+    ]);
   });
 
   it("removes the losing attempt's worktree and branch", async () => {

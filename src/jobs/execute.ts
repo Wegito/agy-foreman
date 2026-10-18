@@ -6,7 +6,7 @@ import type { StreamEvent } from "../agy/types.js";
 import { progressFraction } from "../pipeline/brief.js";
 import { toolSubject } from "../pipeline/toolcall-record.js";
 import { modelFor } from "../agy/run.js";
-import { tierAbove, type Tier } from "../config.js";
+import { TIERS, tierAbove, type Tier } from "../config.js";
 import { git } from "../pipeline/exec.js";
 import type { Attempt, Envelope, JobSpec, PipelineDeps } from "../pipeline/index.js";
 import { removeWorktree, repoHash } from "../pipeline/worktree.js";
@@ -169,6 +169,8 @@ export async function executeJob(
   let totalSec = 0;
   let totalTokens: number | undefined;
   let quotaPool: string | undefined;
+  // Later attempts start from the commit the first attempt resolved, even if HEAD has moved.
+  let baseRef = spec.baseRef;
   for (;;) {
     tried.add(tier);
     worktreePath = path.join(
@@ -192,6 +194,7 @@ export async function executeJob(
       ...(env.reason ? { reason: env.reason } : {}),
     });
     envelope = env;
+    if (attempts.length === 1 && env.baseSha) baseRef = env.baseSha;
     totalSec += env.durationSec;
     if (env.usage?.totalTokens !== undefined) {
       totalTokens = (totalTokens ?? 0) + env.usage.totalTokens;
@@ -222,6 +225,7 @@ export async function executeJob(
     attemptSpec = {
       ...spec,
       jobId: `${record.id}-a${attempts.length + 1}`,
+      baseRef,
       config: { ...spec.config, model },
       conversationId: undefined,
       task: spec.task + failureNote,
@@ -255,6 +259,19 @@ export async function executeJob(
     });
   } else if (envelope) {
     envelope = { ...envelope, jobId: record.id, attempts };
+    // The quota card is only for when every configured tier's pool is cooling. If one is still
+    // free (escalation went past it), the job stops in state quota without the card.
+    let showQuotaCard = false;
+    if (envelope.state === "quota") {
+      showQuotaCard = !(await policy.pickTier(tiers, TIERS[0]));
+      if (!showQuotaCard) {
+        const pool = quotaPool ?? poolOf(model);
+        const failed = attempts.filter((a) => a.state === "failed").pop();
+        envelope.reason = failed
+          ? `${pool} is cooling down; escalation stopped after ${failed.tier} failed verification`
+          : `${pool} is cooling down`;
+      }
+    }
     const incident = classifyIncident(envelope, { hadParent: !!record.parentJobId });
     if (incident) {
       record.incident = incident;
@@ -289,7 +306,7 @@ export async function executeJob(
     });
 
     // Every configured tier is out of quota: today's quota card, on the last attempt's pool.
-    if (envelope.state === "quota") {
+    if (showQuotaCard) {
       const choice = await policy.onQuota({
         resetInSec: envelope.quota?.resetInSec,
         resetText: envelope.quota?.resetText,
