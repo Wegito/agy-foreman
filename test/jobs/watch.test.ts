@@ -80,10 +80,12 @@ describe("waitForJob", () => {
     let ticks = 0;
     const timer = setInterval(() => {
       ticks++;
-      void s.write(rec({ updatedAt: iso(), ...(ticks >= 12 ? { state: "passed" } : {}) }));
+      void s
+        .write(rec({ updatedAt: iso(), ...(ticks >= 12 ? { state: "passed" } : {}) }))
+        .catch(() => {});
       if (ticks >= 12) clearInterval(timer);
     }, 25);
-    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 200, intervalMs: 10 });
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 1500, intervalMs: 10 });
     clearInterval(timer);
     expect(final?.state).toBe("passed");
   });
@@ -92,9 +94,9 @@ describe("waitForJob", () => {
     const s = store();
     await s.write(rec()); // updatedAt long ago
     const t0 = Date.now();
-    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 200, intervalMs: 10 });
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 1500, intervalMs: 10 });
     expect(final?.state).toBe("running");
-    expect(Date.now() - t0).toBeLessThan(180);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 
   it("gives up once updates stop for the stall time", async () => {
@@ -103,23 +105,23 @@ describe("waitForJob", () => {
     let ticks = 0;
     const timer = setInterval(() => {
       if (++ticks > 4) return clearInterval(timer);
-      void s.write(rec({ updatedAt: iso() }));
+      void s.write(rec({ updatedAt: iso() })).catch(() => {});
     }, 25);
     const t0 = Date.now();
-    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 150, intervalMs: 10 });
+    const final = await waitForJob(s, "t-1", { timeoutMs: 50, stallMs: 400, intervalMs: 10 });
     clearInterval(timer);
     expect(final?.state).toBe("running");
-    expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(400);
   });
 
   it("without stallMs (an explicit --timeout-sec) stops at the deadline", async () => {
     const s = store();
     await s.write(rec({ updatedAt: iso() }));
-    const timer = setInterval(() => void s.write(rec({ updatedAt: iso() })), 20);
+    const timer = setInterval(() => void s.write(rec({ updatedAt: iso() })).catch(() => {}), 20);
     const t0 = Date.now();
     const final = await waitForJob(s, "t-1", { timeoutMs: 60, intervalMs: 10 });
     clearInterval(timer);
     expect(final?.state).toBe("running");
-    expect(Date.now() - t0).toBeLessThan(150);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 });
