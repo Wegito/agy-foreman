@@ -9,7 +9,7 @@ import { createWorktree } from "../../src/pipeline/worktree.js";
 import type { VerifyReport } from "../../src/pipeline/verify.js";
 import { Ledger } from "../../src/jobs/ledger.js";
 import { FlagStore } from "../../src/jobs/flags.js";
-import { FakeApprover } from "../../src/jobs/approver.js";
+import { FakeApprover, type QuotaCard, type TaskCard } from "../../src/jobs/approver.js";
 import { parseProjectConfig, loadRuntimeConfig } from "../../src/config.js";
 import type { Envelope, JobSpec, PipelineDeps } from "../../src/pipeline/index.js";
 import { makeRepo, tmpRoot } from "../pipeline/repo.js";
@@ -154,6 +154,43 @@ describe("JobManager.start", () => {
       expect((r as { note?: string }).note).toContain("Gemini Models");
       await m.idle();
       expect(specs[0].config.model).toBe("gemini-4-argon");
+    });
+
+    it("tells the fast task card it may also run on the strong tier", async () => {
+      const ARGON = "Gemini 4 Argon (high)";
+      const on = setup({ config: MODELS });
+      await on.m.start(req(on.repo));
+      await on.m.start({ repoRoot: on.repo, kind: "explore", task: "how?" });
+      await on.m.start(req(on.repo, "strong"));
+      await on.m.idle();
+      expect(on.approver.calls.map((c) => (c.card as TaskCard).alsoRunsOn)).toEqual([
+        { model: ARGON, ifTestsFail: true },
+        { model: ARGON, ifTestsFail: false },
+        undefined,
+      ]);
+      const off = setup({ config: { ...MODELS, escalate: false } });
+      await off.m.start(req(off.repo));
+      await off.m.idle();
+      expect((off.approver.calls[0].card as TaskCard).alsoRunsOn).toEqual({
+        model: ARGON,
+        ifTestsFail: false,
+      });
+      const one = setup();
+      await one.m.start(req(one.repo));
+      await one.m.idle();
+      expect(one.approver.calls[0].card).not.toHaveProperty("alsoRunsOn");
+    });
+
+    it("tells the plan card it may also run on the strong tier", async () => {
+      const { m, repo, approver } = setup({ config: MODELS });
+      const file = path.join(repo, "plan.md");
+      writeFileSync(file, PLAN);
+      await m.start({ repoRoot: repo, kind: "implement", plan: { file, step: 1 }, estimate: EST });
+      await m.idle();
+      expect(approver.calls[0]).toMatchObject({
+        kind: "plan",
+        card: { alsoRunsOn: { model: "Gemini 4 Argon (high)", ifTestsFail: true } },
+      });
     });
 
     it("names the chosen model on the task card", async () => {
@@ -447,6 +484,8 @@ describe("attempts", () => {
     await m.idle();
     expect(specs).toHaveLength(1);
     expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
+    // One tier (no models key): today's card, without pools.
+    expect(approver.calls.find((c) => c.kind === "quota")!.card).not.toHaveProperty("pools");
     expect(rec.state).toBe("quota");
     expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([["fast", "quota"]]);
   });
@@ -464,6 +503,11 @@ describe("attempts", () => {
     expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
     const cooldowns = (await deps.flags.read()).cooldowns;
     expect(Object.keys(cooldowns).sort()).toEqual(["Gemini 4 Argon", "Gemini Models"]);
+    const card = approver.calls.find((c) => c.kind === "quota")!.card as QuotaCard;
+    expect(card.pools).toEqual([
+      { pool: "Gemini Models", resetAt: cooldowns["Gemini Models"].until },
+      { pool: "Gemini 4 Argon", resetAt: cooldowns["Gemini 4 Argon"].until },
+    ]);
   });
 
   it("starts later attempts from the first attempt's base commit even if HEAD moved", async () => {
@@ -523,8 +567,12 @@ describe("attempts", () => {
     const rec = await waitTerminal(deps, await m.start({ ...impl(repo), tier: "strong" }));
     await m.idle();
     expect(specs.map((s) => s.config.model)).toEqual(["gemini-4-argon"]);
-    expect(Object.keys((await deps.flags.read()).cooldowns)).toEqual(["Gemini 4 Argon"]);
+    const cooldowns = (await deps.flags.read()).cooldowns;
+    expect(Object.keys(cooldowns)).toEqual(["Gemini 4 Argon"]);
     expect(approver.calls.filter((c) => c.kind === "quota")).toHaveLength(1);
+    expect((approver.calls.find((c) => c.kind === "quota")!.card as QuotaCard).pools).toEqual([
+      { pool: "Gemini 4 Argon", resetAt: cooldowns["Gemini 4 Argon"].until },
+    ]);
     expect(rec.state).toBe("quota");
     expect(rec.attempts!.map((a) => [a.tier, a.state])).toEqual([["strong", "quota"]]);
   });

@@ -323,14 +323,20 @@ export async function executeJob(
       attempts,
     });
 
-    // Every configured tier is out of quota: today's quota card, on the last attempt's pool.
+    // Every configured tier is out of quota: today's quota card, on the last attempt's pool. With
+    // a strong tier the card names the pools this job ran out of ("Gemini quota" alone would be
+    // wrong for Argon).
     if (showQuotaCard) {
+      const pools = tiers.strong
+        ? [...new Set(attempts.filter((a) => a.state === "quota").map((a) => poolOf(a.model)))]
+        : undefined;
       const choice = await policy.onQuota({
         resetInSec: envelope.quota?.resetInSec,
         resetText: envelope.quota?.resetText,
         pausedJobId: record.id,
         repoRoot: record.repoRoot,
         pool: quotaPool ?? poolOf(model),
+        ...(pools ? { pools } : {}),
       });
       if (choice === "retry") {
         await ctx.startFollowup(

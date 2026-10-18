@@ -159,18 +159,24 @@ export class DelegationPolicy {
 
   /** After a run hit the quota: stores a cooldown of max(60 s, resetInSec ?? 900 s) on the
    *  pool (Gemini Models when the caller gives none), shows the quota card, applies the choice
-   *  (same as choose) and returns it. Never throws. */
+   *  (same as choose) and returns it. With `pools` the card names those pools and their resets.
+   *  Never throws. */
   async onQuota(o: {
     resetInSec?: number;
     resetText?: string;
     pausedJobId?: string;
     repoRoot?: string;
     pool?: string;
+    pools?: string[];
   }): Promise<QuotaChoice | "unavailable"> {
     try {
       const pool = o.pool ?? "Gemini Models";
       await this.markCooling(pool, o.resetInSec, o.resetText);
-      const cd = (await this.flags.read()).cooldowns[pool];
+      const cooldowns = (await this.flags.read()).cooldowns;
+      const cd = cooldowns[pool];
+      const pools = o.pools
+        ?.filter((p) => cooldowns[p])
+        .map((p) => ({ pool: p, resetAt: cooldowns[p].until }));
 
       let choice: QuotaChoice | "unavailable" = "unavailable";
       try {
@@ -179,6 +185,7 @@ export class DelegationPolicy {
           resetAt: cd.until,
           pausedJobId: o.pausedJobId,
           repoRoot: o.repoRoot,
+          ...(pools?.length ? { pools } : {}),
         });
       } catch {
         choice = "unavailable";

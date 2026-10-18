@@ -16,7 +16,7 @@ import {
 import type { JobSpec } from "../pipeline/index.js";
 import { resolveSkills } from "../pipeline/skills.js";
 import { createWorktree, removeWorktree } from "../pipeline/worktree.js";
-import { ApprovalUnavailable, type TaskCard } from "./approver.js";
+import { ApprovalUnavailable, type AlsoRunsOn, type TaskCard } from "./approver.js";
 import { selectLessons, tagsFor } from "./lessons.js";
 import { openSpecContext, parsePlanStep, planTitle } from "./plan.js";
 import { DelegationPolicy, PlanGrants } from "./policy.js";
@@ -56,13 +56,15 @@ export async function prepareStartJob(
 
   const { tier, model } = check;
   const effort = i.effort ?? config.project.effort;
-  // A failed fast implement job gets one retry on the strong tier when escalation is on.
-  const escalatesTo =
-    i.kind === "implement" &&
-    config.project.escalate &&
-    tier === "fast" &&
-    config.project.tiers.strong
-      ? modelLabel(config.project.tiers.strong, effort)
+  // A fast job may also run on the strong tier (harder steps, quota fallback, and one retry when a
+  // failed implement job escalates); the card says so, so approving it covers that tier knowingly.
+  const strong = config.project.tiers.strong;
+  const alsoRunsOn: AlsoRunsOn | undefined =
+    tier === "fast" && strong
+      ? {
+          model: modelLabel(strong, effort),
+          ifTestsFail: i.kind === "implement" && config.project.escalate,
+        }
       : undefined;
 
   // 3. Resolve the task
@@ -255,7 +257,7 @@ export async function prepareStartJob(
           steps,
           model,
           effort,
-          ...(escalatesTo ? { escalatesTo } : {}),
+          ...(alsoRunsOn ? { alsoRunsOn } : {}),
           estimate: i.estimate,
           repoRoot: i.repoRoot,
         });
@@ -271,7 +273,7 @@ export async function prepareStartJob(
         effort,
         skills: i.skills ?? [],
         model,
-        ...(escalatesTo ? { escalatesTo } : {}),
+        ...(alsoRunsOn ? { alsoRunsOn } : {}),
         estimate: i.estimate,
         repoRoot: i.repoRoot,
       };

@@ -2,14 +2,20 @@ import type { Effort } from "../config.js";
 import { modelLabel } from "../pools.js";
 import type { Estimate } from "./store.js";
 
+/** The strong tier's label (`Gemini 4 Argon (high)`), and whether a failed run retries there. */
+export interface AlsoRunsOn {
+  model: string;
+  ifTestsFail: boolean;
+}
+
 export interface PlanCard {
   planFile: string;
   title: string;
   steps: number[];
   model: string;
   effort?: string;
-  /** Label of the tier a failed implement job retries on. */
-  escalatesTo?: string;
+  /** The strong tier a fast job may also run on (see `alsoRunsOnPart`). */
+  alsoRunsOn?: AlsoRunsOn;
   estimate?: Estimate;
   repoRoot?: string;
 }
@@ -20,7 +26,7 @@ export interface TaskCard {
   effort: string;
   skills: string[];
   model: string;
-  escalatesTo?: string;
+  alsoRunsOn?: AlsoRunsOn;
   estimate?: Estimate;
   repoRoot?: string;
 }
@@ -62,8 +68,12 @@ function formatK(tokens: number): string {
   return `${val}k`;
 }
 
-function escalatePart(c: { escalatesTo?: string }): string {
-  return c.escalatesTo ? `\nIf tests fail: one retry on ${c.escalatesTo}` : "";
+/** Approving a card also covers the strong tier: escalation, harder steps and quota fallback. */
+function alsoRunsOnPart(c: { alsoRunsOn?: AlsoRunsOn }): string {
+  const a = c.alsoRunsOn;
+  if (!a) return "";
+  const when = [...(a.ifTestsFail ? ["if tests fail"] : []), "for harder steps"];
+  return `\nMay also run on ${a.model}: ${when.join(", ")}, or when Gemini quota runs out`;
 }
 
 export function planCardText(c: PlanCard): string {
@@ -71,7 +81,7 @@ export function planCardText(c: PlanCard): string {
     ? `\nDoing it myself: ~${formatK(c.estimate.directTokens)} tokens · Delegating: ~${formatK(c.estimate.delegateOverheadTokens)} tokens`
     : "";
   const stepsPart = c.steps.length === 0 ? "all steps" : c.steps.join(", ");
-  return `Delegate plan "${c.title}" to ${modelLabel(c.model, c.effort as Effort | undefined)}?\n${c.planFile} · steps for Gemini: ${stepsPart}${escalatePart(c)}${estimatePart}`;
+  return `Delegate plan "${c.title}" to ${modelLabel(c.model, c.effort as Effort | undefined)}?\n${c.planFile} · steps for Gemini: ${stepsPart}${alsoRunsOnPart(c)}${estimatePart}`;
 }
 
 export function taskCardText(c: TaskCard): string {
@@ -81,14 +91,14 @@ export function taskCardText(c: TaskCard): string {
     ? `\nDoing it myself: ~${formatK(c.estimate.directTokens)} tokens · Delegating: ~${formatK(c.estimate.delegateOverheadTokens)} tokens`
     : "";
   const reasonPart = c.estimate?.reason ? `\nWhy: ${c.estimate.reason}` : "";
-  return `${line1}${escalatePart(c)}${estimatePart}${reasonPart}`;
+  return `${line1}${alsoRunsOnPart(c)}${estimatePart}${reasonPart}`;
 }
 
-function poolResetLabel(resetAt: string): string {
+function poolResetLabel(resetAt: string, now: Date): string {
   const d = new Date(resetAt);
   if (isNaN(d.getTime())) return "unknown";
   const hhmm = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-  const today = new Date();
+  const today = now;
   const sameDay =
     d.getFullYear() === today.getFullYear() &&
     d.getMonth() === today.getMonth() &&
@@ -96,9 +106,11 @@ function poolResetLabel(resetAt: string): string {
   return sameDay ? hhmm : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${hhmm}`;
 }
 
-export function quotaCardText(c: QuotaCard): string {
+export function quotaCardText(c: QuotaCard, now: Date = new Date()): string {
   if (c.pools?.length) {
-    const list = c.pools.map((p) => `${p.pool} (resets ${poolResetLabel(p.resetAt)})`).join(", ");
+    const list = c.pools
+      .map((p) => `${p.pool} (resets ${poolResetLabel(p.resetAt, now)})`)
+      .join(", ");
     const paused = c.pausedJobId ? ` Task ${c.pausedJobId} paused, partial work kept.` : "";
     return `Quota reached: ${list}.${paused}`;
   }
