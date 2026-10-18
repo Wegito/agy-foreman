@@ -51,8 +51,8 @@ Many users also have their own Claude Code or Codex (GPT) subscription. This des
 ## 3. Choosing and escalating
 
 - **Picking a tier:** `agy_start` takes an optional `tier`, which defaults to `fast`. The `gemini-delegation` skill tells Claude when to ask for `strong`: work spanning many files, tricky logic, or a retry after a failure.
-- **The ladder:** if an `implement` job on `fast` ends **failed verification** (tests red or contract not green, not a gate violation, cancel or setup error), and `escalate` is on and a `strong` tier exists, the server runs one follow-up of the same job on `strong`, with the failure summary added to the brief. Only after that does it report to Claude.
-- **Limits:** escalation happens at most once per job and never goes to `backup`. Using `backup` is reserved for quota fallback (§4), or for Claude asking for it explicitly with `tier: "backup"`.
+- **The ladder:** if an `implement` job's attempt ends **failed verification** (tests red or contract not green, not a gate violation, cancel or setup error), and `escalate` is on, the server runs the job again on the **next tier up** that's available: `fast` → `strong` → `backup`. Each new attempt gets the failure summary in its brief. Only when the top tier has failed, or no higher tier is available, does it report to Claude.
+- **Limits:** each tier is tried at most once per job. The `backup` rung is used only when the user allowed automatic use at connect time (`auto: true`, §4.1). Otherwise the ladder stops at `strong`. Claude can still ask for `tier: "backup"` explicitly.
 - **The result envelope** gains `attempts: [{ tier, runner, model, state }]`, so Claude and the user see the whole ladder.
 
 ### 3.1 Attempts, not child jobs (my call)

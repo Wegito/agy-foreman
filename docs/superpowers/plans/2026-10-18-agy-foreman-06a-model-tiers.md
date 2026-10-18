@@ -20,7 +20,7 @@
 - Tier names are exactly `fast` and `strong` (`backup` arrives in Plan 6b). The order is `fast` → `strong`, and fallback never moves down.
 - Pool names are exactly as `agy -p /usage` prints them: `Gemini Models`, `Gemini 4 Argon`, `Claude and GPT models`.
 - Effort picks the agy model variant through the existing `modelFor(model, effort)`. A tier's value is a base name such as `gemini-4-argon`.
-- Escalation applies only to `implement` jobs whose attempt ended in state `failed`, at most once per job, and only from `fast` to `strong`.
+- Escalation applies only to `implement` jobs whose attempt ended in state `failed`. It climbs to the next available tier up, trying each tier at most once per job. In this plan the ladder is `fast` → `strong`; Plan 6b appends `backup` (only when `auto: true`) without changing the loop.
 - Every attempt starts from the job's base commit with the job's original contract tests. Attempts never reuse `startFollowup` or the parent's `conversationId`.
 - Never call real `agy` in unit tests. Use the existing fake `runJob` in `test/jobs/manager.test.ts`.
 - Run `npm run test:ci` before each commit. Known unrelated failure on the author's Windows machine: `test/jobs/fsutil.test.ts` "survives many overlapping writes…" (EPERM); it fails without these changes too.
@@ -278,7 +278,7 @@ Behavior, in `executeJob`, looping until it stops:
    - then `next = pickTier(tiers, currentTier)`.
    - If there's a `next`, run another attempt on it.
    - If not, stop and run today's quota block unchanged (`policy.onQuota(...)` with `pool` set, plus the retry follow-up).
-3. **When the attempt ends in `failed`:** escalate if all of these hold: `kind === "implement"`, `config.escalate`, the current tier is `fast`, `tiers.strong` exists, and there has been no escalation yet. Then `next = pickTier(tiers, "strong")`. If there's a `next`, run another attempt with this `failureNote`:
+3. **When the attempt ends in `failed`:** escalate if `kind === "implement"` and `config.escalate`. Then `next = pickTier(tiers, tierAbove(current))`, skipping any tier this job has already tried. Add `export function tierAbove(t: Tier): Tier | undefined` next to `TIERS` in `src/config.ts`; it returns the next entry of `TIERS`, so Plan 6b's added `backup` joins the ladder without loop changes. If there's a `next`, run another attempt with this `failureNote`:
    ```
    \n\nA previous attempt on <label> failed verification.
    Failing tests: <verify.failures.join(", ") || "see output">
@@ -309,7 +309,7 @@ it("retries a failed fast attempt once on strong, from scratch, and records both
   expect((await deps.ledger.entries()).filter((e) => e.jobId === rec.id)).toHaveLength(1);
 });
 it("does not escalate explore jobs, guard violations, or when escalate is false", async () => { /* three cases, specs.length === 1 each */ });
-it("escalates at most once", async () => { /* both attempts fail → specs.length === 2, state failed */ });
+it("tries each tier at most once and stops at the top", async () => { /* fast and strong both fail → specs.length === 2, state failed, attempts [fast failed, strong failed] */ });
 it("moves to strong when fast hits the quota, without showing the quota card", async () => { /* fast → "quota" envelope; approver.cards has no quota card; attempts [fast quota, strong passed]; flags.cooldowns has "Gemini Models" */ });
 it("shows today's quota card when the last available tier hits the quota", async () => { /* default config, "quota" → approver quota card shown once, as in the existing quota test */ });
 it("removes the losing attempt's worktree and branch", async () => { /* use the makeRepo + real createWorktree path from test/pipeline/repo.ts for attempt 1's envelope; assert the path is gone and `git branch --list agy/<id>` is empty after the job ends */ });
