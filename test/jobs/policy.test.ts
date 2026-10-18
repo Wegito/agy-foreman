@@ -156,4 +156,38 @@ describe("DelegationPolicy", () => {
     await p.choose("retry");
     expect((await p.state()).cooldowns).toEqual([]);
   });
+
+  it("refuses, never substituting fast, when the requested tier is not configured", async () => {
+    const p = new DelegationPolicy(flags(), new FakeApprover(), () => NOW);
+    const r = await p.check("/r", TIERS, "strong");
+    expect(!r.ok && r.result).toEqual({
+      state: "refused",
+      reason: "no strong tier configured (set models.strong in .agy-foreman.json)",
+    });
+  });
+
+  it("pickFrom uses the given snapshot and time, not live state", () => {
+    const p = new DelegationPolicy(flags(), new FakeApprover(), () => NOW);
+    const until = new Date(NOW.getTime() + 600_000).toISOString();
+    const snap = { delegationPaused: false, grants: [], cooldowns: { "Gemini Models": { until } } };
+    expect(p.pickFrom(snap, BOTH, "fast", NOW.getTime())?.tier).toBe("strong");
+    expect(p.pickFrom(snap, BOTH, "fast", NOW.getTime() + 700_000)?.tier).toBe("fast");
+  });
+
+  it("does not throw when a cooldown expires between the flags read and the pick", async () => {
+    const f = flags();
+    const until = new Date(NOW.getTime() + 1000).toISOString();
+    await f.update((x) => {
+      x.cooldowns = { "Gemini Models": { until } };
+    });
+    let calls = 0;
+    // The clock jumps past the cooldown after the first reading.
+    const now = () => new Date(NOW.getTime() + (calls++ > 0 ? 5000 : 0));
+    const r = await new DelegationPolicy(f, new FakeApprover({ quota: "wait" }), now).check(
+      "/r",
+      TIERS,
+      "fast",
+    );
+    expect(!r.ok && r.result).toMatchObject({ state: "quota" });
+  });
 });

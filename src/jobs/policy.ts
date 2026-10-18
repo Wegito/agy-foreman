@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Approver, QuotaChoice } from "./approver.js";
-import { FlagStore, hashPlan } from "./flags.js";
+import { FlagStore, hashPlan, type Flags } from "./flags.js";
 import type { StartResult } from "./manager.js";
 import { TIERS, type ProjectConfig, type Tier } from "../config.js";
 import { poolOf } from "../pools.js";
@@ -18,17 +18,26 @@ export class DelegationPolicy {
     tiers: ProjectConfig["tiers"],
     from: Tier,
   ): Promise<{ tier: Tier; model: string } | undefined> {
-    const flags = await this.flags.read();
+    return this.pickFrom(await this.flags.read(), tiers, from, this.now().getTime());
+  }
+
+  /** pickTier on a fixed flags snapshot and timestamp, so callers can stay consistent. */
+  pickFrom(
+    flags: Flags,
+    tiers: ProjectConfig["tiers"],
+    from: Tier,
+    nowMs: number,
+  ): { tier: Tier; model: string } | undefined {
     for (const tier of TIERS.slice(TIERS.indexOf(from))) {
       const model = tiers[tier];
       if (!model) continue;
-      if (!this.isCooling(flags.cooldowns[poolOf(model)])) return { tier, model };
+      if (!this.isCooling(flags.cooldowns[poolOf(model)], nowMs)) return { tier, model };
     }
     return undefined;
   }
 
-  private isCooling(c?: { until: string }): boolean {
-    return !!c && new Date(c.until).getTime() > this.now().getTime();
+  private isCooling(c: { until: string } | undefined, nowMs: number): boolean {
+    return !!c && new Date(c.until).getTime() > nowMs;
   }
 
   /** Stores a cooldown for one pool of max(60 s, resetInSec ?? 900 s). */
@@ -64,9 +73,19 @@ export class DelegationPolicy {
       };
     }
 
-    // A tier the project does not configure cannot be requested; start from fast.
-    const from: Tier = tiers[requested] ? requested : "fast";
-    const picked = await this.pickTier(tiers, from);
+    // Never substitute a weaker tier for one the project has not configured.
+    if (!tiers[requested]) {
+      return {
+        ok: false,
+        result: {
+          state: "refused",
+          reason: `no ${requested} tier configured (set models.${requested} in .agy-foreman.json)`,
+        },
+      };
+    }
+    const from = requested;
+    const nowMs = this.now().getTime();
+    const picked = this.pickFrom(flags, tiers, from, nowMs);
     if (picked) return { ok: true, ...this.withNote(picked, tiers, from) };
 
     const cooling = TIERS.slice(TIERS.indexOf(from))
@@ -75,9 +94,13 @@ export class DelegationPolicy {
       .map((m) => poolOf(m))
       .filter((pool, i, all) => all.indexOf(pool) === i)
       .map((pool) => ({ pool, c: flags.cooldowns[pool] }))
-      .filter((x) => this.isCooling(x.c));
+      .filter((x) => this.isCooling(x.c, nowMs));
     const pools = cooling.map((x) => ({ pool: x.pool, resetAt: x.c.until }));
-    const first = [...cooling].sort((a, b) => a.c.until.localeCompare(b.c.until))[0].c;
+    const first = [...cooling].sort((a, b) => a.c.until.localeCompare(b.c.until))[0]?.c;
+    if (!first) {
+      // Unreachable with a consistent snapshot; run rather than crash if it ever happens.
+      return { ok: true, tier: from, model: tiers[from] as string };
+    }
 
     let choice: QuotaChoice | "unavailable";
     try {
@@ -194,10 +217,11 @@ export class DelegationPolicy {
     cooldowns: { pool: string; until: string; resetText?: string }[];
   }> {
     const flags = await this.flags.read();
+    const nowMs = this.now().getTime();
     return {
       delegation: flags.delegationPaused ? "paused" : "active",
       cooldowns: Object.entries(flags.cooldowns)
-        .filter(([, c]) => this.isCooling(c))
+        .filter(([, c]) => this.isCooling(c, nowMs))
         .map(([pool, c]) => ({ pool, until: c.until, resetText: c.text })),
     };
   }
