@@ -159,3 +159,32 @@ describe("loadConfig", () => {
     );
   });
 });
+
+describe("model tiers", () => {
+  it("defaults to one fast tier from `model`, no strong tier, no escalation", () => {
+    const c = parseProjectConfig({});
+    expect(c.tiers).toEqual({ fast: "gemini-3.8-flash-high" });
+    expect(c.escalate).toBe(false);
+    expect(c.model).toBe("gemini-3.8-flash-high");
+  });
+  it("reads a models block and turns escalation on by default", () => {
+    const c = parseProjectConfig({
+      models: { fast: "gemini-3.8-flash", strong: "gemini-4-argon" },
+    });
+    expect(c.tiers).toEqual({ fast: "gemini-3.8-flash", strong: "gemini-4-argon" });
+    expect(c.escalate).toBe(true);
+    expect(c.model).toBe("gemini-3.8-flash");
+  });
+  it("lets models.fast fall back to `model` and honours escalate: false", () => {
+    const c = parseProjectConfig({
+      model: "gemini-3.8-flash",
+      models: { strong: "gemini-4-argon" },
+      escalate: false,
+    });
+    expect(c.tiers).toEqual({ fast: "gemini-3.8-flash", strong: "gemini-4-argon" });
+    expect(c.escalate).toBe(false);
+  });
+  it("rejects unknown tier names", () => {
+    expect(() => parseProjectConfig({ models: { turbo: "x" } })).toThrow(ConfigError);
+  });
+});

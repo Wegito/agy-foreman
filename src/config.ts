@@ -4,6 +4,9 @@ import { z } from "zod";
 
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
+/** Model tiers, in escalation order: a failed attempt climbs from `fast` to `strong`. */
+export type Tier = "fast" | "strong";
+export const TIERS: readonly Tier[] = ["fast", "strong"];
 export const CONFIG_FILE = ".agy-foreman.json";
 
 export class ConfigError extends Error {
@@ -56,6 +59,11 @@ const projectSchema = z
     test_report: z.string().min(1).optional(),
     protected_paths: z.array(z.string().min(1)).default(() => [...DEFAULT_PROTECTED_PATHS]),
     model: z.string().min(1).default("gemini-3.8-flash-high"),
+    models: z
+      .object({ fast: z.string().min(1).optional(), strong: z.string().min(1).optional() })
+      .strict()
+      .optional(),
+    escalate: z.boolean().optional(),
     effort: z.enum(EFFORTS).default("high"),
     gate: z.enum(["elicitation", "client"]).default("elicitation"),
     // "auto" is reserved for a future fully automatic mode and deliberately rejected in v0.1.
@@ -80,7 +88,11 @@ export interface ProjectConfig {
   setupCommand?: string[];
   testReport?: string;
   protectedPaths: string[];
+  /** Always equals `tiers.fast`. */
   model: string;
+  tiers: { fast: string; strong?: string };
+  /** Retry a failed implement job on the next tier up. On by default once `models` is set. */
+  escalate: boolean;
   effort: Effort;
   gate: "elicitation" | "client";
   approval: "per_plan" | "per_task";
@@ -118,12 +130,15 @@ export function parseProjectConfig(raw: unknown): ProjectConfig {
     throw new ConfigError(`Invalid ${CONFIG_FILE}: ${msg}`);
   }
   const p = parsed.data;
+  const fast = p.models?.fast ?? p.model;
   return {
     ...(p.test_command ? { testCommand: p.test_command } : {}),
     ...(p.setup_command ? { setupCommand: p.setup_command } : {}),
     ...(p.test_report ? { testReport: p.test_report } : {}),
     protectedPaths: p.protected_paths,
-    model: p.model,
+    model: fast,
+    tiers: { fast, ...(p.models?.strong ? { strong: p.models.strong } : {}) },
+    escalate: p.escalate ?? p.models !== undefined,
     effort: p.effort,
     gate: p.gate,
     approval: p.approval,
